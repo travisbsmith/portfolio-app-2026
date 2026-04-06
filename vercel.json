@@ -2,5 +2,8 @@
   "crons": [
     { "path": "/api/followup/check", "schedule": "0 14 * * *" },
     { "path": "/api/sync/analytics",  "schedule": "0 6 * * *" }
+  ],
+  "redirects": [
+    { "source": "/", "destination": "/dashboard", "permanent": false }
   ]
 }
