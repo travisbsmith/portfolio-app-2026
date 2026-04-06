@@ -41,7 +41,7 @@ export const GET: APIRoute = async ({ request }) => {
     // Only send one follow-up (check metadata flag)
     if (invoice.metadata?.followup_sent) continue;
 
-    await sendEmail({
+    const invoiceEmail = await sendEmail({
       to: invoice.customer_email,
       subject: 'Quick reminder — invoice from Travis Smith',
       html: `
@@ -52,6 +52,15 @@ export const GET: APIRoute = async ({ request }) => {
         <p>— Travis</p>
       `,
     });
+
+    if (invoiceEmail.error) {
+      console.error('Invoice follow-up email failed:', {
+        invoiceId: invoice.id,
+        email: invoice.customer_email,
+        error: invoiceEmail.error,
+      });
+      continue;
+    }
 
     // Mark invoice so we don't send again
     await stripe.invoices.update(invoice.id, {
@@ -84,7 +93,7 @@ export const GET: APIRoute = async ({ request }) => {
     });
     const amount = (sub.items.data[0]?.price.unit_amount ?? 0) / 100;
 
-    await sendEmail({
+    const renewalEmail = await sendEmail({
       to: customer.email,
       subject: `Your Insider Retainer renews ${renewDate}`,
       html: `
@@ -95,6 +104,15 @@ export const GET: APIRoute = async ({ request }) => {
         <p>— Travis</p>
       `,
     });
+
+    if (renewalEmail.error) {
+      console.error('Renewal notice email failed:', {
+        subscriptionId: sub.id,
+        email: customer.email,
+        error: renewalEmail.error,
+      });
+      continue;
+    }
 
     await stripe.subscriptions.update(sub.id, {
       metadata: { ...sub.metadata, renewal_notice_sent: String(renewsAt) },
@@ -128,7 +146,7 @@ export const GET: APIRoute = async ({ request }) => {
         const readyToSend = count === 0 ? (now - startMs >= WEEK_MS) : (now - lastMs >= WEEK_MS);
         if (!readyToSend) continue;
 
-        await sendEmail({
+        const scheduleReminder = await sendEmail({
           to: lead.email,
           subject: 'Following up — let\'s find a time',
           html: `
@@ -140,6 +158,16 @@ export const GET: APIRoute = async ({ request }) => {
             ${unsubLink}
           `,
         });
+
+        if (scheduleReminder.error) {
+          console.error('Lead schedule reminder failed:', {
+            leadId: lead.id,
+            email: lead.email,
+            error: scheduleReminder.error,
+          });
+          continue;
+        }
+
         await updateLead(lead.id, {
           remindersSentSchedule: count + 1,
           lastReminderScheduleAt: new Date().toISOString(),
@@ -156,7 +184,7 @@ export const GET: APIRoute = async ({ request }) => {
         const readyToSend = count === 0 ? (now - startMs >= WEEK_MS) : (now - lastMs >= WEEK_MS);
         if (!readyToSend) continue;
 
-        await sendEmail({
+        const proposalReminder = await sendEmail({
           to: lead.email,
           subject: 'Checking in on your proposal',
           html: `
@@ -167,6 +195,16 @@ export const GET: APIRoute = async ({ request }) => {
             ${unsubLink}
           `,
         });
+
+        if (proposalReminder.error) {
+          console.error('Lead proposal reminder failed:', {
+            leadId: lead.id,
+            email: lead.email,
+            error: proposalReminder.error,
+          });
+          continue;
+        }
+
         await updateLead(lead.id, {
           remindersSentProposal: count + 1,
           lastReminderProposalAt: new Date().toISOString(),

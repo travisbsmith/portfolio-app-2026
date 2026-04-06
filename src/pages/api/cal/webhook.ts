@@ -80,11 +80,18 @@ export const POST: APIRoute = async ({ request }) => {
           internalNotes: existing.internalNotes ? `${existing.internalNotes}\n\n${note}` : note,
         });
         try {
-          await sendEmail({
+          const emailResult = await sendEmail({
             to: 'travis@fully-operational.com',
             subject: `Call cancelled: ${name}`,
             html: `<p style="font-family:monospace"><strong>${name}</strong> cancelled their call.<br><br>${dashboardLink(existing.id)}</p>`,
           });
+          if (emailResult.error) {
+            console.error('Cancellation notification email failed:', {
+              leadId: existing.id,
+              bookingUid,
+              error: emailResult.error,
+            });
+          }
         } catch { /* non-fatal */ }
       }
       return ok();
@@ -102,11 +109,18 @@ export const POST: APIRoute = async ({ request }) => {
           stage: 'Call Scheduled',
         });
         try {
-          await sendEmail({
+          const emailResult = await sendEmail({
             to: 'travis@fully-operational.com',
             subject: `Call rescheduled: ${name} → ${nextMeeting}`,
             html: `<p style="font-family:monospace"><strong>${name}</strong> rescheduled.<br>New time: <strong>${nextMeeting}</strong><br><br>${dashboardLink(existing.id)}</p>`,
           });
+          if (emailResult.error) {
+            console.error('Reschedule notification email failed:', {
+              leadId: existing.id,
+              bookingUid,
+              error: emailResult.error,
+            });
+          }
         } catch { /* non-fatal */ }
       }
       return ok();
@@ -171,7 +185,7 @@ export const POST: APIRoute = async ({ request }) => {
       ...(lead.additionalNotes ? [['Notes',        lead.additionalNotes]] : []),
     ].map(([l, v]) => `<tr><td style="padding:6px 12px;color:#666;white-space:nowrap">${l}</td><td style="padding:6px 12px">${v}</td></tr>`).join('');
 
-    await sendEmail({
+    const emailResult = await sendEmail({
       to: 'travis@fully-operational.com',
       subject: `Call booked: ${name} — ${nextMeeting}`,
       html: `
@@ -180,6 +194,13 @@ export const POST: APIRoute = async ({ request }) => {
         <p style="margin-top:24px">${dashboardLink(lead.id)}</p>
       `,
     });
+    if (emailResult.error) {
+      console.error('Booking notification email failed:', {
+        leadId: lead.id,
+        bookingUid,
+        error: emailResult.error,
+      });
+    }
   } catch (e) {
     console.error('Notification email failed:', e);
   }

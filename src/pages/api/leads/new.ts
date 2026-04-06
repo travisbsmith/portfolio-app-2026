@@ -4,6 +4,19 @@ import { sendEmail } from '../email/send';
 
 export const prerender = false;
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function jsonResponse(payload: Record<string, unknown>, status = 200) {
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
+function getWantsJson(request: Request, body: Record<string, string>, hasSecret: boolean) {
+  return hasSecret || body._via === 'fetch' || (request.headers.get('accept') ?? '').includes('application/json');
+}
+
 export const POST: APIRoute = async ({ request, url, redirect }) => {
   // Parse body — handles both direct form POST and JSON webhook
   const contentType = request.headers.get('content-type') ?? '';
@@ -19,29 +32,51 @@ export const POST: APIRoute = async ({ request, url, redirect }) => {
     return new Response('Bad request', { status: 400 });
   }
 
+  const secret = url.searchParams.get('secret');
+  const wantsJson = getWantsJson(request, body, Boolean(secret));
+
   // Honeypot — silently redirect spambots
   if (body._gotcha) {
-    return redirect('https://fully-operational.com/booked');
+    return wantsJson ? jsonResponse({ ok: true, ignored: true }) : redirect('https://fully-operational.com/booked');
   }
 
   // Webhook calls include ?secret — verify it
-  const secret = url.searchParams.get('secret');
   if (secret) {
     const expected = import.meta.env.CRON_SECRET ?? process.env.CRON_SECRET;
     if (!expected || secret !== expected) {
-      return new Response('Unauthorized', { status: 401 });
+      return wantsJson ? jsonResponse({ ok: false, error: 'Unauthorized' }, 401) : new Response('Unauthorized', { status: 401 });
     }
+  }
+
+  const name = (body.name ?? '').trim();
+  const email = (body.email ?? '').trim().toLowerCase();
+  const storeStatus = (body.store_status ?? '').trim();
+  const challenge = (body.challenge ?? '').trim();
+  const serviceInterest = (body.service_interest ?? '').trim();
+
+  const validationErrors: string[] = [];
+  if (!name) validationErrors.push('Name is required.');
+  if (!email) validationErrors.push('Email is required.');
+  if (email && !EMAIL_RE.test(email)) validationErrors.push('Email must be valid.');
+  if (!storeStatus) validationErrors.push('Store status is required.');
+  if (!challenge) validationErrors.push('Challenge is required.');
+  if (!serviceInterest) validationErrors.push('Service interest is required.');
+
+  if (validationErrors.length > 0) {
+    return wantsJson
+      ? jsonResponse({ ok: false, error: 'Validation failed', details: validationErrors }, 400)
+      : new Response(validationErrors.join(' '), { status: 400 });
   }
 
   const now = new Date().toISOString();
   const lead: Lead = {
     id: `lead_${Date.now()}`,
-    name: body.name ?? 'Unknown',
-    email: body.email ?? '',
+    name,
+    email,
     storeUrl: body.store_url ?? '',
-    storeStatus: body.store_status ?? '',
-    challenge: body.challenge ?? '',
-    serviceInterest: body.service_interest ?? '',
+    storeStatus,
+    challenge,
+    serviceInterest,
     availability: body.availability ?? '',
     timezone: body.timezone ?? '',
     referral: body.referral ?? '',
@@ -60,12 +95,12 @@ export const POST: APIRoute = async ({ request, url, redirect }) => {
   try {
     await saveLead(lead);
   } catch (e) {
-    console.error('KV save failed:', e);
+    console.error('KV save failed:', { leadId: lead.id, error: e });
   }
 
   // Email Travis a notification
   try {
-    await sendEmail({
+    const emailResult = await sendEmail({
       to: 'travis@fully-operational.com',
       subject: `New booking request from ${lead.name}`,
       html: `
@@ -84,17 +119,39 @@ export const POST: APIRoute = async ({ request, url, redirect }) => {
         <p style="margin-top:24px"><a href="https://app.fully-operational.com/dashboard" style="background:#ff5722;color:white;padding:10px 20px;text-decoration:none;font-family:monospace">View in Dashboard →</a></p>
       `,
     });
+
+    if (emailResult.error) {
+      console.error('Failed to send lead notification email:', {
+        leadId: lead.id,
+        email: lead.email,
+        error: emailResult.error,
+      });
+
+      return wantsJson
+        ? jsonResponse({ ok: false, error: 'Lead saved but email delivery failed', id: lead.id }, 502)
+        : new Response('Lead saved but email delivery failed', { status: 502 });
+    }
+
+    console.info('Lead notification email sent', {
+      leadId: lead.id,
+      emailId: emailResult.id,
+      recipient: 'travis@fully-operational.com',
+    });
   } catch (e) {
-    console.error('Failed to send lead notification email:', e);
+    console.error('Failed to send lead notification email:', {
+      leadId: lead.id,
+      email: lead.email,
+      error: e,
+    });
+
+    return wantsJson
+      ? jsonResponse({ ok: false, error: 'Lead saved but email delivery failed', id: lead.id }, 502)
+      : new Response('Lead saved but email delivery failed', { status: 502 });
   }
 
   // Webhook or fetch call → return JSON; direct form post → redirect
-  const wantsJson = secret || (request.headers.get('accept') ?? '').includes('application/json');
   if (wantsJson) {
-    return new Response(JSON.stringify({ ok: true, id: lead.id, name: lead.name, email: lead.email }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return jsonResponse({ ok: true, id: lead.id, name: lead.name, email: lead.email, emailSent: true });
   }
 
   return redirect('https://fully-operational.com/booked');
