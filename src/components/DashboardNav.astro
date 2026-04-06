@@ -1,0 +1,111 @@
+---
+export interface Props {
+  active: 'clients' | 'analytics' | 'calendar';
+}
+const { active } = Astro.props;
+---
+
+<nav class="dash-nav">
+  <div class="container">
+    <div class="dash-nav__inner">
+      <div class="dash-nav__left">
+        <a href="https://fully-operational.com" class="dash-nav__site-link">&larr; Back to site</a>
+        <span class="dash-nav__divider">|</span>
+        <div class="dash-nav__links">
+          <a href="/dashboard" class:list={['dash-nav__link', { 'dash-nav__link--active': active === 'clients' }]}>Clients</a>
+          <a href="/analytics" class:list={['dash-nav__link', { 'dash-nav__link--active': active === 'analytics' }]}>Analytics</a>
+          <a href="/calendar" class:list={['dash-nav__link', { 'dash-nav__link--active': active === 'calendar' }]}>Calendar</a>
+        </div>
+      </div>
+      <form method="POST" action="/dashboard" style="display:inline">
+        <input type="hidden" name="_action" value="logout" />
+        <button type="submit" class="dash-nav__logout">Logout</button>
+      </form>
+    </div>
+  </div>
+</nav>
+
+<style>
+  .dash-nav {
+    background: var(--color-bg);
+    border-bottom: 1px solid var(--color-border);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  .dash-nav__inner {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    height: 48px;
+    gap: var(--space-6);
+  }
+
+  .dash-nav__left {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+  }
+
+  .dash-nav__site-link {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--color-text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    white-space: nowrap;
+    transition: color 0.15s;
+  }
+
+  .dash-nav__site-link:hover { color: var(--color-accent); }
+
+  .dash-nav__divider {
+    color: var(--color-border-strong);
+    font-size: var(--text-xs);
+  }
+
+  .dash-nav__links {
+    display: flex;
+    gap: 2px;
+  }
+
+  .dash-nav__link {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: var(--space-1) var(--space-3);
+    border-radius: var(--radius-md);
+    color: var(--color-text-tertiary);
+    transition: all 0.15s;
+    text-decoration: none;
+  }
+
+  .dash-nav__link:hover { color: var(--color-text); background: var(--color-bg-alt); }
+
+  .dash-nav__link--active {
+    color: var(--color-text);
+    background: var(--color-bg-alt);
+    font-weight: 600;
+  }
+
+  .dash-nav__logout {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: var(--space-1) var(--space-3);
+    border-radius: var(--radius-md);
+    background: none;
+    border: 1px solid var(--color-border);
+    color: var(--color-text-tertiary);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .dash-nav__logout:hover {
+    border-color: var(--color-accent);
+    color: var(--color-accent);
+  }
+</style>

@@ -1,0 +1,711 @@
+---
+export const prerender = false;
+
+import BaseLayout from '../../../layouts/BaseLayout.astro';
+import DashboardNav from '../../../components/DashboardNav.astro';
+import { getLeads } from '../../../lib/leads';
+import { isAuthenticated } from '../../../lib/auth';
+
+if (!isAuthenticated(Astro.cookies)) return Astro.redirect('/dashboard');
+
+// Load lead
+const { id } = Astro.params;
+const leads = await getLeads();
+const lead = leads.find(l => l.id === id);
+if (!lead) return Astro.redirect('/dashboard');
+
+const firstName = lead.name.split(' ')[0];
+
+// Proposal templates — server side for define:vars
+const TEMPLATES: Record<string, { subject: string; price: string; intro: string; body: string }> = {
+  'Clarity Session': {
+    subject: `Proposal: ${lead.name} × Fully Operational`,
+    price: '$500',
+    intro: `Hi ${firstName},\n\nGreat talking today. Based on our conversation, I think a Clarity Session is the right next step.\n`,
+    body: `<h2>Clarity Session — $500</h2>
+<p>[One sentence on why this fits — reference something specific they said.]</p>
+<h3>What's included</h3>
+<ul>
+  <li>90-minute deep-dive on your store via video call</li>
+  <li>I'll review your UX, app stack, marketing setup, and biggest growth blockers</li>
+  <li>Written action plan with your top 3–5 priorities delivered within 48 hours</li>
+</ul>
+<h3>Investment</h3>
+<p><strong>$500 flat</strong></p>
+<p>To book: Pay here → [Stripe link] and I'll send a calendar invite.</p>
+<p>Questions? Just reply here.</p>
+<p>— Travis<br>travis@fully-operational.com<br><a href="https://cal.com/fullyoperational">cal.com/fullyoperational</a></p>`,
+  },
+  'Store Launch Sprint': {
+    subject: `Proposal: ${lead.name} × Fully Operational`,
+    price: '$2,500/month',
+    intro: `Hi ${firstName},\n\nGreat talking today. Based on what you're building, here's what I'd suggest.\n`,
+    body: `<h2>Store Launch Sprint — $2,500/month</h2>
+<p>[One sentence on why this fits — reference something specific they said.]</p>
+<h3>Month 1 — Foundation</h3>
+<ul>
+  <li>Store architecture: product data model, metafields, collections, navigation</li>
+  <li>Consumer education pages + ingredient/product index (the content that converts before you have reviews)</li>
+  <li>Email waitlist setup — pre-launch page + Klaviyo or Shopify Email so you're building the list now</li>
+  <li>App stack map: exactly which apps you need, which to skip, zero vendor lock-in</li>
+</ul>
+<h3>Ongoing</h3>
+<ul>
+  <li>10–15 hours/month of hands-on work</li>
+  <li>Email access for questions between sessions</li>
+  <li>Monthly check-in on priorities</li>
+</ul>
+<h3>Investment</h3>
+<p><strong>$2,500/month</strong> — Month 1 is on me while we establish the engagement.</p>
+<p>To get started: Reply here and I'll send a kickoff doc with what I need from you to begin.</p>
+<p>Questions? Just reply.</p>
+<p>— Travis<br>travis@fully-operational.com<br><a href="https://cal.com/fullyoperational">cal.com/fullyoperational</a></p>`,
+  },
+  'Insider Retainer': {
+    subject: `Proposal: ${lead.name} × Fully Operational`,
+    price: '$3,500/month',
+    intro: `Hi ${firstName},\n\nGreat talking today. Based on where you're at, the Insider Retainer is the right fit.\n`,
+    body: `<h2>Insider Retainer — $3,500/month</h2>
+<p>[One sentence on why this fits — reference something specific they said.]</p>
+<h3>What's included</h3>
+<ul>
+  <li>2 × 30-min strategy calls per month</li>
+  <li>Async access Mon–Fri (email), 24-hr response</li>
+  <li>Monthly written audit: top 3 priorities + recommendations</li>
+  <li>Up to 5 hrs/month of hands-on work</li>
+  <li>Month-to-month, cancel anytime</li>
+</ul>
+<h3>Investment</h3>
+<p><strong>$3,500/month</strong></p>
+<p>To get started: Pay the first month here → [Stripe link] and I'll send an onboarding doc.</p>
+<p>Questions? Just reply.</p>
+<p>— Travis<br>travis@fully-operational.com<br><a href="https://cal.com/fullyoperational">cal.com/fullyoperational</a></p>`,
+  },
+};
+
+// Find best matching template
+let matchedKey = '';
+for (const key of Object.keys(TEMPLATES)) {
+  if (lead.serviceInterest && lead.serviceInterest.includes(key)) {
+    matchedKey = key;
+    break;
+  }
+}
+const template = matchedKey ? TEMPLATES[matchedKey] : null;
+
+const defaultSubject = template?.subject ?? `Proposal: ${lead.name} × Fully Operational`;
+const defaultBody = template?.body ?? `<h2>[Service Name] — [Price]</h2>
+<p>[One sentence on why this fits.]</p>
+<h3>What's included</h3>
+<ul>
+  <li>[Item 1]</li>
+  <li>[Item 2]</li>
+  <li>[Item 3]</li>
+</ul>
+<h3>Investment</h3>
+<p><strong>[PRICE]</strong></p>
+<p>To get started: [Next step]</p>
+<p>— Travis<br>travis@fully-operational.com<br><a href="https://cal.com/fullyoperational">cal.com/fullyoperational</a></p>`;
+---
+
+<BaseLayout title={`Proposal — ${lead.name}`} description="Write and send a proposal">
+<!-- Load Trix -->
+<link rel="stylesheet" href="https://unpkg.com/trix@2.1.1/dist/trix.css" />
+<script src="https://unpkg.com/trix@2.1.1/dist/trix.umd.min.js" is:inline></script>
+
+<div class="proposal-page">
+  <DashboardNav active="clients" />
+
+  <div class="proposal-header">
+    <div class="container">
+      <div class="proposal-header__inner">
+        <div class="proposal-header__left">
+          <a href={`/dashboard/${lead.id}`} class="back-link">← {lead.name}</a>
+          <div class="proposal-header__meta">
+            <span class="proposal-label">Proposal to</span>
+            <span class="proposal-recipient">
+              <strong>{lead.name}</strong>
+              <a href={`mailto:${lead.email}`} class="recipient-email">{lead.email}</a>
+            </span>
+          </div>
+        </div>
+        <div class="proposal-header__right">
+          <span id="draft-status" class="draft-status"></span>
+          <button id="btn-send" class="btn-send-proposal">Send Proposal</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="proposal-body container">
+    <div class="proposal-layout">
+
+      <!-- Editor panel -->
+      <div class="editor-panel">
+
+        <!-- Subject -->
+        <div class="field-group">
+          <label class="field-label" for="prop-subject">Subject</label>
+          <input
+            type="text"
+            id="prop-subject"
+            class="subject-input"
+            value={defaultSubject}
+          />
+        </div>
+
+        <!-- Trix editor -->
+        <div class="field-group field-group--editor">
+          <label class="field-label">Body</label>
+          <input id="trix-input" type="hidden" name="content" />
+          <trix-editor
+            input="trix-input"
+            id="trix-editor"
+            class="trix-content proposal-editor"
+          ></trix-editor>
+        </div>
+
+        <!-- Feedback -->
+        <div id="send-feedback" class="send-feedback"></div>
+
+      </div>
+
+      <!-- Sidebar -->
+      <aside class="proposal-sidebar">
+
+        {template && (
+          <div class="info-card">
+            <div class="info-card__header">Template loaded</div>
+            <div class="info-card__body">
+              <div class="info-row">
+                <span class="info-label">Service</span>
+                <span class="info-val">{matchedKey}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">Price</span>
+                <span class="info-val info-val--price">{template.price}</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div class="info-card">
+          <div class="info-card__header">Sending to</div>
+          <div class="info-card__body">
+            <div class="info-row">
+              <span class="info-label">Name</span>
+              <span class="info-val">{lead.name}</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">Email</span>
+              <a href={`mailto:${lead.email}`} class="info-val info-val--link">{lead.email}</a>
+            </div>
+            {lead.serviceInterest && (
+              <div class="info-row">
+                <span class="info-label">Interested in</span>
+                <span class="info-val">{lead.serviceInterest}</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div class="info-card">
+          <div class="info-card__header">Tips</div>
+          <div class="info-card__body tips">
+            <p>Open with one specific line about <em>their</em> situation.</p>
+            <p>Keep the service block factual. Let the bullets sell.</p>
+            <p>End with a single, frictionless next step.</p>
+          </div>
+        </div>
+
+        <div class="template-switcher">
+          <div class="info-card__header">Switch template</div>
+          <div class="template-btns">
+            <button class="tpl-btn" data-tpl="Clarity Session">Clarity Session</button>
+            <button class="tpl-btn" data-tpl="Store Launch Sprint">Store Launch Sprint</button>
+            <button class="tpl-btn" data-tpl="Insider Retainer">Insider Retainer</button>
+            <button class="tpl-btn tpl-btn--blank" data-tpl="blank">Blank</button>
+          </div>
+        </div>
+
+      </aside>
+    </div>
+  </div>
+</div>
+</BaseLayout>
+
+<style>
+  /* ── Page shell ── */
+  .proposal-page {
+    min-height: 100vh;
+    background: var(--color-bg-alt);
+  }
+
+  /* ── Header ── */
+  .proposal-header {
+    background: var(--color-bg);
+    border-bottom: 1px solid var(--color-border);
+    padding: var(--space-4) 0;
+    position: sticky;
+    top: 0;
+    z-index: 50;
+  }
+
+  .proposal-header__inner {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: var(--space-6);
+    flex-wrap: wrap;
+  }
+
+  .proposal-header__left {
+    display: flex;
+    align-items: center;
+    gap: var(--space-6);
+    min-width: 0;
+  }
+
+  .back-link {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--color-text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    white-space: nowrap;
+    flex-shrink: 0;
+    transition: color 0.15s;
+    text-decoration: none;
+  }
+
+  .back-link:hover { color: var(--color-accent); }
+
+  .proposal-header__meta {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+  }
+
+  .proposal-label {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--color-text-tertiary);
+  }
+
+  .proposal-recipient {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    font-size: var(--text-sm);
+  }
+
+  .recipient-email {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--color-text-tertiary);
+  }
+
+  .recipient-email:hover { color: var(--color-text-secondary); }
+
+  .proposal-header__right {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    flex-shrink: 0;
+  }
+
+  .draft-status {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--color-text-tertiary);
+    min-width: 80px;
+    text-align: right;
+  }
+
+  .btn-send-proposal {
+    padding: var(--space-2) var(--space-6);
+    background: var(--color-accent);
+    color: #fff;
+    border: none;
+    border-radius: var(--radius-md);
+    font-family: inherit;
+    font-size: var(--text-sm);
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s;
+    white-space: nowrap;
+  }
+
+  .btn-send-proposal:hover { background: var(--color-accent-hover); }
+  .btn-send-proposal:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* ── Body layout ── */
+  .proposal-body {
+    padding: var(--space-8) 0;
+  }
+
+  .proposal-layout {
+    display: grid;
+    grid-template-columns: 1fr 280px;
+    gap: var(--space-8);
+    align-items: start;
+  }
+
+  @media (max-width: 900px) {
+    .proposal-layout { grid-template-columns: 1fr; }
+  }
+
+  /* ── Editor panel ── */
+  .editor-panel {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+  }
+
+  .field-group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+
+  .field-group--editor {
+    flex: 1;
+  }
+
+  .field-label {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--color-text-tertiary);
+  }
+
+  .subject-input {
+    width: 100%;
+    padding: var(--space-3) var(--space-4);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    font-family: inherit;
+    font-size: var(--text-base);
+    font-weight: 500;
+    background: var(--color-bg);
+    color: var(--color-text);
+    box-sizing: border-box;
+    transition: border-color 0.15s;
+  }
+
+  .subject-input:focus {
+    outline: none;
+    border-color: var(--color-accent);
+  }
+
+  /* ── Trix overrides ── */
+  .proposal-editor {
+    min-height: 560px;
+    border: 1px solid var(--color-border) !important;
+    border-radius: var(--radius-md) !important;
+    background: var(--color-bg) !important;
+    color: var(--color-text) !important;
+    font-family: inherit !important;
+    font-size: var(--text-sm) !important;
+    line-height: 1.7 !important;
+    padding: var(--space-6) !important;
+    transition: border-color 0.15s;
+  }
+
+  .proposal-editor:focus {
+    outline: none !important;
+    border-color: var(--color-accent) !important;
+  }
+
+  trix-toolbar {
+    border: 1px solid var(--color-border) !important;
+    border-bottom: none !important;
+    border-radius: var(--radius-md) var(--radius-md) 0 0 !important;
+    background: var(--color-bg-alt) !important;
+    padding: var(--space-2) var(--space-3) !important;
+  }
+
+  /* Connect toolbar to editor visually */
+  .field-group--editor trix-toolbar + trix-editor {
+    border-top: none !important;
+    border-radius: 0 0 var(--radius-md) var(--radius-md) !important;
+  }
+
+  .send-feedback {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    min-height: 1.4em;
+    padding: 0 var(--space-1);
+  }
+
+  .send-feedback.success { color: #38a169; }
+  .send-feedback.error { color: #e53e3e; }
+
+  /* ── Sidebar ── */
+  .proposal-sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+  }
+
+  .info-card {
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+  }
+
+  .info-card__header {
+    padding: var(--space-3) var(--space-4);
+    border-bottom: 1px solid var(--color-border);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--color-text-tertiary);
+    font-weight: 500;
+  }
+
+  .info-card__body {
+    padding: var(--space-4);
+  }
+
+  .info-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: var(--space-3);
+    padding: var(--space-2) 0;
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .info-row:last-child { border-bottom: none; }
+
+  .info-label {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--color-text-tertiary);
+    white-space: nowrap;
+  }
+
+  .info-val {
+    font-size: var(--text-xs);
+    color: var(--color-text);
+    text-align: right;
+    min-width: 0;
+    word-break: break-all;
+  }
+
+  .info-val--price {
+    font-family: var(--font-mono);
+    font-weight: 600;
+    color: var(--color-accent);
+  }
+
+  .info-val--link {
+    color: var(--color-accent);
+  }
+
+  .info-val--link:hover { text-decoration: underline; }
+
+  .tips {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+
+  .tips p {
+    font-size: var(--text-xs);
+    color: var(--color-text-secondary);
+    line-height: 1.55;
+    margin: 0;
+  }
+
+  .tips em { color: var(--color-text); font-style: italic; }
+
+  /* ── Template switcher ── */
+  .template-switcher {
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+  }
+
+  .template-btns {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .tpl-btn {
+    width: 100%;
+    padding: var(--space-3) var(--space-4);
+    background: none;
+    border: none;
+    border-bottom: 1px solid var(--color-border);
+    font-family: inherit;
+    font-size: var(--text-xs);
+    color: var(--color-text-secondary);
+    text-align: left;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .tpl-btn:last-child { border-bottom: none; }
+
+  .tpl-btn:hover {
+    background: var(--color-bg-alt);
+    color: var(--color-accent);
+  }
+
+  .tpl-btn--blank { color: var(--color-text-tertiary); font-style: italic; }
+</style>
+
+<script define:vars={{
+  leadId: lead.id,
+  leadEmail: lead.email,
+  leadName: lead.name,
+  matchedKey,
+  defaultBody,
+  templates: Object.fromEntries(
+    Object.entries(TEMPLATES).map(([k, v]) => [k, { subject: v.subject, body: v.body }])
+  ),
+}}>
+
+// ── Set initial Trix content ──
+// Trix fires trix-initialize once the editor is ready
+const DRAFT_KEY = `proposal-draft-${leadId}`;
+const DRAFT_SUBJECT_KEY = `proposal-subject-${leadId}`;
+
+let draftTimer = null;
+
+function saveDraft() {
+  clearTimeout(draftTimer);
+  draftTimer = setTimeout(() => {
+    const body = document.getElementById('trix-input').value;
+    const subject = document.getElementById('prop-subject').value;
+    localStorage.setItem(DRAFT_KEY, body);
+    localStorage.setItem(DRAFT_SUBJECT_KEY, subject);
+    showDraftStatus('Draft saved');
+  }, 1200);
+}
+
+function showDraftStatus(msg) {
+  const el = document.getElementById('draft-status');
+  el.textContent = msg;
+  setTimeout(() => { el.textContent = ''; }, 2500);
+}
+
+document.addEventListener('trix-initialize', () => {
+  const editor = document.getElementById('trix-editor');
+  const savedDraft = localStorage.getItem(DRAFT_KEY);
+  const savedSubject = localStorage.getItem(DRAFT_SUBJECT_KEY);
+
+  if (savedDraft) {
+    editor.editor.loadHTML(savedDraft);
+    showDraftStatus('Draft restored');
+  } else {
+    editor.editor.loadHTML(defaultBody);
+  }
+
+  if (savedSubject) {
+    document.getElementById('prop-subject').value = savedSubject;
+  }
+});
+
+// Auto-save on changes
+document.addEventListener('trix-change', saveDraft);
+document.getElementById('prop-subject').addEventListener('input', saveDraft);
+
+// ── Template switcher ──
+const BLANK_BODY = `<h2>[Service Name] — [Price]</h2>
+<p>[One sentence on why this fits.]</p>
+<h3>What's included</h3>
+<ul>
+  <li>[Item 1]</li>
+  <li>[Item 2]</li>
+  <li>[Item 3]</li>
+</ul>
+<h3>Investment</h3>
+<p><strong>[PRICE]</strong></p>
+<p>To get started: [Next step]</p>
+<p>— Travis<br>travis@fully-operational.com<br><a href="https://cal.com/fullyoperational">cal.com/fullyoperational</a></p>`;
+
+document.querySelectorAll('.tpl-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const key = btn.dataset.tpl;
+    const editor = document.getElementById('trix-editor');
+    const subjectEl = document.getElementById('prop-subject');
+
+    if (key === 'blank') {
+      editor.editor.loadHTML(BLANK_BODY);
+      subjectEl.value = `Proposal: ${leadName} × Fully Operational`;
+    } else if (templates[key]) {
+      editor.editor.loadHTML(templates[key].body);
+      subjectEl.value = templates[key].subject;
+    }
+
+    // Clear saved draft so the new template is fresh
+    localStorage.removeItem(DRAFT_KEY);
+    localStorage.removeItem(DRAFT_SUBJECT_KEY);
+    showDraftStatus('Template loaded');
+  });
+});
+
+// ── Send ──
+document.getElementById('btn-send').addEventListener('click', async () => {
+  const btn = document.getElementById('btn-send');
+  const feedback = document.getElementById('send-feedback');
+  const html = document.getElementById('trix-input').value;
+  const subject = document.getElementById('prop-subject').value.trim();
+
+  if (!html || html === '<div></div>') {
+    feedback.textContent = 'Body is empty — write something first.';
+    feedback.className = 'send-feedback error';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Sending…';
+  feedback.textContent = '';
+  feedback.className = 'send-feedback';
+
+  try {
+    const res = await fetch('/api/email/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ to: leadEmail, subject, html }),
+    });
+    const json = await res.json();
+
+    if (res.ok) {
+      // Update stage to Proposal Sent
+      await fetch(`/api/leads/${leadId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stage: 'Proposal Sent', proposalHtml: html, proposalSubject: subject, proposalSentAt: new Date().toISOString() }),
+      });
+      // Clear draft
+      localStorage.removeItem(DRAFT_KEY);
+      localStorage.removeItem(DRAFT_SUBJECT_KEY);
+
+      feedback.textContent = 'Proposal sent ✓ — redirecting…';
+      feedback.className = 'send-feedback success';
+      setTimeout(() => { window.location.href = `/dashboard/${leadId}`; }, 1500);
+    } else {
+      feedback.textContent = json.error ?? 'Something went wrong';
+      feedback.className = 'send-feedback error';
+      btn.disabled = false;
+      btn.textContent = 'Send Proposal';
+    }
+  } catch {
+    feedback.textContent = 'Network error — try again';
+    feedback.className = 'send-feedback error';
+    btn.disabled = false;
+    btn.textContent = 'Send Proposal';
+  }
+});
+</script>

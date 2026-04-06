@@ -1,0 +1,1639 @@
+---
+export const prerender = false;
+
+import BaseLayout from '../layouts/BaseLayout.astro';
+import DashboardNav from '../components/DashboardNav.astro';
+import Stripe from 'stripe';
+import { getLeads, type Lead } from '../lib/leads';
+import { SESSION_COOKIE, SESSION_VALUE } from '../lib/auth';
+import { matchService } from '../lib/services';
+import { getTimeEntries } from '../lib/time';
+const DASHBOARD_PASSWORD = import.meta.env.DASHBOARD_PASSWORD ?? process.env.DASHBOARD_PASSWORD;
+
+let isAuthenticated = false;
+let loginError = '';
+
+// Handle POST: login or logout
+if (Astro.request.method === 'POST') {
+  const formData = await Astro.request.formData();
+  const action = formData.get('_action');
+
+  if (action === 'logout') {
+    Astro.cookies.delete(SESSION_COOKIE, { path: '/' });
+    return Astro.redirect('/dashboard');
+  }
+
+  const password = formData.get('password');
+  if (password === DASHBOARD_PASSWORD) {
+    Astro.cookies.set(SESSION_COOKIE, SESSION_VALUE, {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'strict',
+      maxAge: 60 * 60 * 24 * 7,
+      path: '/',
+    });
+    return Astro.redirect('/dashboard');
+  } else {
+    loginError = 'Incorrect password';
+  }
+}
+
+isAuthenticated = Astro.cookies.get(SESSION_COOKIE)?.value === SESSION_VALUE;
+
+// Leads from KV
+let leads: Lead[] = [];
+if (isAuthenticated) {
+  try {
+    leads = await getLeads();
+  } catch {
+    leads = [];
+  }
+}
+
+const activeLeads = leads.filter(l => l.stage !== 'Archived');
+const archivedLeads = leads.filter(l => l.stage === 'Archived');
+
+// Next upcoming meeting across all active leads
+const nowMs = Date.now();
+const nextCall = activeLeads
+  .filter(l => l.nextMeetingISO && new Date(l.nextMeetingISO).getTime() > nowMs)
+  .sort((a, b) => new Date(a.nextMeetingISO!).getTime() - new Date(b.nextMeetingISO!).getTime())[0] ?? null;
+
+// Fetch Stripe invoices per lead
+const stripeInvoicesByClient: Record<string, any[]> = {};
+if (isAuthenticated && (import.meta.env.STRIPE_SECRET_KEY ?? process.env.STRIPE_SECRET_KEY)) {
+  try {
+    const stripe = new Stripe(import.meta.env.STRIPE_SECRET_KEY ?? process.env.STRIPE_SECRET_KEY ?? '');
+    const stripeLeads = leads.filter(l => l.stripeCustomerId);
+    const results = await Promise.allSettled(
+      stripeLeads.map(l => stripe.invoices.list({ customer: l.stripeCustomerId, limit: 5 }))
+    );
+    results.forEach((result, i) => {
+      stripeInvoicesByClient[stripeLeads[i].email] =
+        result.status === 'fulfilled' ? result.value.data : [];
+    });
+  } catch {
+    // Stripe not configured
+  }
+}
+
+// ── Revenue widget stats ──
+const monthStart = new Date();
+monthStart.setDate(1);
+monthStart.setHours(0, 0, 0, 0);
+const monthStartUnix = Math.floor(monthStart.getTime() / 1000);
+const yearStart = new Date(monthStart.getFullYear(), 0, 1);
+const yearStartUnix = Math.floor(yearStart.getTime() / 1000);
+
+const proposalLeads = activeLeads.filter(l => l.stage === 'Proposal Sent');
+const pipelineValue = proposalLeads.reduce((sum, l) => {
+  const svc = matchService(l.serviceInterest ?? '');
+  return sum + (svc ? svc.priceCents / 100 : 0);
+}, 0);
+
+const clientsActive = activeLeads.filter(l => l.stage === 'Active');
+const activeMRR = clientsActive.reduce((sum, l) => {
+  const svc = matchService(l.serviceInterest ?? '');
+  return sum + (svc?.isRecurring ? svc.priceCents / 100 : 0);
+}, 0);
+
+let revenueThisMonth = 0;
+let revenueYTD = 0;
+if (isAuthenticated && (import.meta.env.STRIPE_SECRET_KEY ?? process.env.STRIPE_SECRET_KEY)) {
+  try {
+    const stripeR = new Stripe(import.meta.env.STRIPE_SECRET_KEY ?? process.env.STRIPE_SECRET_KEY ?? '');
+    const paidInvoices = await stripeR.invoices.list({ status: 'paid', created: { gte: yearStartUnix }, limit: 100 });
+    for (const inv of paidInvoices.data) {
+      const amt = (inv.amount_paid ?? 0) / 100;
+      revenueYTD += amt;
+      if (inv.created >= monthStartUnix) revenueThisMonth += amt;
+    }
+  } catch { /* Stripe not configured */ }
+}
+
+function fmt$(n: number): string {
+  return n === 0 ? '$0' : '$' + n.toLocaleString('en-US', { maximumFractionDigits: 0 });
+}
+
+// ── Pipeline analytics ──
+const allLeads = leads;
+const proposalPool = allLeads.filter(l => ['Proposal Sent', 'Active', 'Closed'].includes(l.stage));
+const wonLeads = allLeads.filter(l => l.stage === 'Active' || l.stage === 'Closed');
+const winRate = proposalPool.length > 0 ? Math.round(wonLeads.length / proposalPool.length * 100) : 0;
+
+const stageCounts: Record<string, number> = {};
+for (const stage of ['Lead', 'Call Scheduled', 'Proposal Sent', 'Active', 'Closed']) {
+  stageCounts[stage] = allLeads.filter(l => l.stage === stage).length;
+}
+
+const avgDealSize = wonLeads.length > 0
+  ? wonLeads.reduce((sum, l) => {
+      const svc = matchService(l.serviceInterest ?? '');
+      return sum + (svc ? svc.priceCents / 100 : 0);
+    }, 0) / wonLeads.length
+  : 0;
+
+// ── Overdue invoices stat (from KV cache written by cron) ──
+let overdueCount = 0;
+let overdueAmount = 0;
+if (isAuthenticated) {
+  try {
+    const kvToken = import.meta.env.KV_REST_API_TOKEN ?? process.env.KV_REST_API_TOKEN;
+    const kvUrl = import.meta.env.KV_REST_API_URL ?? process.env.KV_REST_API_URL;
+    if (kvToken && kvUrl) {
+      const res = await fetch(`${kvUrl}/get/overdue-cache`, {
+        headers: { Authorization: `Bearer ${kvToken}` },
+      });
+      const json = await res.json() as { result: string | null };
+      if (json.result) {
+        const val = typeof json.result === 'string' ? JSON.parse(json.result) : json.result;
+        overdueCount = val.count ?? 0;
+        overdueAmount = val.amount ?? 0;
+      }
+    }
+  } catch { /* cache miss */ }
+}
+
+// Fetch time totals for all active leads in parallel
+const timeTotalByLeadId: Record<string, number> = {};
+if (isAuthenticated) {
+  const timeResults = await Promise.allSettled(activeLeads.map(l => getTimeEntries(l.id)));
+  timeResults.forEach((r, i) => {
+    timeTotalByLeadId[activeLeads[i].id] = r.status === 'fulfilled'
+      ? r.value.reduce((sum, e) => sum + e.hours, 0)
+      : 0;
+  });
+}
+---
+
+<BaseLayout title="Dashboard — Travis Smith" description="Private dashboard">
+
+  {!isAuthenticated ? (
+    <!-- Login Screen -->
+    <div class="auth-screen">
+      <div class="auth-card">
+        <h1>Dashboard</h1>
+        <p>Enter password to access</p>
+        <form method="POST">
+          <input type="hidden" name="_action" value="login" />
+          <input
+            type="password"
+            name="password"
+            placeholder="Password"
+            autocomplete="current-password"
+            autofocus
+          />
+          <button type="submit">Access Dashboard</button>
+        </form>
+        {loginError && <p class="error">{loginError}</p>}
+      </div>
+    </div>
+  ) : (
+    <!-- Authenticated Dashboard -->
+    <div class="dashboard">
+      <DashboardNav active="clients" />
+
+      <main class="dashboard-main">
+        <div class="container">
+
+          {nextCall && (
+            <a href={`/dashboard/${nextCall.id}`} class="next-call-card">
+              <div class="next-call-label">Next call</div>
+              <div class="next-call-info">
+                <span class="next-call-name">{nextCall.name}</span>
+                <span class="next-call-dot">·</span>
+                <span class="next-call-time">{nextCall.nextMeeting}</span>
+              </div>
+            </a>
+          )}
+
+          <div class="stats-strip">
+            <div class="stat-card">
+              <div class="stat-label">Pipeline</div>
+              <div class="stat-value">{fmt$(pipelineValue)}</div>
+              <div class="stat-sub">{proposalLeads.length} open proposal{proposalLeads.length !== 1 ? 's' : ''}</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">This Month</div>
+              <div class="stat-value">{fmt$(revenueThisMonth)}</div>
+              <div class="stat-sub">paid invoices</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Active MRR</div>
+              <div class="stat-value">{fmt$(activeMRR)}</div>
+              <div class="stat-sub">{clientsActive.length} active client{clientsActive.length !== 1 ? 's' : ''}</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">YTD Revenue</div>
+              <div class="stat-value">{fmt$(revenueYTD)}</div>
+              <div class="stat-sub">{new Date().getFullYear()} total</div>
+            </div>
+            <div class={`stat-card${overdueCount > 0 ? ' stat-card--alert' : ''}`}>
+              <div class="stat-label">Overdue</div>
+              <div class={`stat-value${overdueCount > 0 ? ' stat-value--alert' : ''}`}>{overdueCount > 0 ? fmt$(overdueAmount) : '—'}</div>
+              <div class="stat-sub">{overdueCount > 0 ? `${overdueCount} invoice${overdueCount !== 1 ? 's' : ''}` : 'all clear'}</div>
+            </div>
+          </div>
+
+          <!-- Pipeline Analytics -->
+          <div class="pipeline-section">
+            <div class="pipeline-funnel">
+              {(['Lead', 'Call Scheduled', 'Proposal Sent', 'Active', 'Closed'] as const).map((stage, i, arr) => (
+                <>
+                  <div class="funnel-stage">
+                    <div class="funnel-count">{stageCounts[stage]}</div>
+                    <div class="funnel-label">{stage}</div>
+                  </div>
+                  {i < arr.length - 1 && <div class="funnel-arrow">›</div>}
+                </>
+              ))}
+            </div>
+            <div class="pipeline-metrics">
+              <div class="pipeline-metric">
+                <div class="pipeline-metric__value">{winRate}%</div>
+                <div class="pipeline-metric__label">Win Rate</div>
+                <div class="pipeline-metric__sub">proposals → active/closed</div>
+              </div>
+              <div class="pipeline-metric">
+                <div class="pipeline-metric__value">{fmt$(avgDealSize)}</div>
+                <div class="pipeline-metric__label">Avg Deal</div>
+                <div class="pipeline-metric__sub">{wonLeads.length} won deal{wonLeads.length !== 1 ? 's' : ''}</div>
+              </div>
+              <div class="pipeline-metric">
+                <div class="pipeline-metric__value">{allLeads.length}</div>
+                <div class="pipeline-metric__label">Total Leads</div>
+                <div class="pipeline-metric__sub">all time</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="section-header">
+            <h2>Clients</h2>
+            <div class="header-actions">
+              <button class="btn-secondary" id="new-lead-btn">+ New Lead</button>
+              <button class="btn-primary" id="new-invoice-btn">+ New Invoice</button>
+            </div>
+          </div>
+
+          {activeLeads.length === 0 && archivedLeads.length === 0 ? (
+            <section class="section empty-state">
+              <p>No leads yet. When someone fills out <strong>/book</strong>, they'll appear here automatically.</p>
+            </section>
+          ) : (
+            <section class="section">
+              <div class="table-container">
+                <table class="clients-table">
+                  <thead>
+                    <tr>
+                      <th>Person</th>
+                      <th>Interested in</th>
+                      <th>Stage</th>
+                      <th>Latest Invoice</th>
+                      <th>Amount</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody id="active-leads-body">
+                    {activeLeads.map((lead) => {
+                      const invoices = stripeInvoicesByClient[lead.email] ?? [];
+                      const latest = invoices[0];
+                      const statusLabel = latest?.status ?? '—';
+                      const amount = latest ? `$${((latest.amount_due ?? 0) / 100).toFixed(2)}` : '—';
+                      const invoiceUrl = latest?.hosted_invoice_url ?? null;
+                      return (
+                        <tr data-lead-id={lead.id} data-href={`/dashboard/${lead.id}`} class="clickable-row">
+                          <td>
+                            <a href={`/dashboard/${lead.id}`} class="client-name-link">
+                              <div class="client-name">{lead.name}</div>
+                              <div class="client-email">{lead.email}</div>
+                              {lead.storeUrl && <div class="client-store">{lead.storeUrl.replace(/^https?:\/\//, '')}</div>}
+                              {lead.nextMeeting && <div class="client-meeting">📅 {lead.nextMeeting}</div>}
+                              {(timeTotalByLeadId[lead.id] ?? 0) > 0 && (
+                                <div class="client-time">{timeTotalByLeadId[lead.id].toFixed(1)} hrs logged</div>
+                              )}
+                            </a>
+                          </td>
+                          <td>
+                            <div class="service-interest">
+                              {lead.serviceInterest ? lead.serviceInterest.replace(/\s*\(\$[\d,]+(?:\/\w+)?\)/g, '') : '—'}
+                              {lead.storeStatus && <span class="store-status-sep"> · {lead.storeStatus}</span>}
+                            </div>
+                          </td>
+                          <td>
+                            <span class={`stage-badge stage-${lead.stage.toLowerCase().replace(/\s+/g, '-')}`}>
+                              {lead.stage}
+                            </span>
+                          </td>
+                          <td>
+                            {invoiceUrl ? (
+                              <a href={invoiceUrl} target="_blank" rel="noopener" class={`invoice-status status-${statusLabel}`}>
+                                {statusLabel}
+                              </a>
+                            ) : (
+                              <span class="invoice-status status-none">{statusLabel}</span>
+                            )}
+                          </td>
+                          <td class="mono">{amount}</td>
+                          <td class="td-actions">
+                            <div class="row-menu">
+                              <button class="row-menu-btn" aria-label="Actions" aria-expanded="false">⋮</button>
+                              <div class="row-menu-dropdown" hidden>
+                                <button class="row-menu-item followup-btn" data-email={lead.email} data-name={lead.name} data-invoice-url={invoiceUrl ?? ''}>Follow up</button>
+                                <button class="row-menu-item archive-btn" data-lead-id={lead.id}>Archive</button>
+                                <button class="row-menu-item row-menu-item--danger delete-btn" data-lead-id={lead.id} data-name={lead.name}>Delete</button>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  {archivedLeads.length > 0 && (
+                    <tbody id="archived-leads-body" class="archived-section" hidden>
+                      <tr class="archived-divider">
+                        <td colspan="6">Archived</td>
+                      </tr>
+                      {archivedLeads.map((lead) => (
+                        <tr data-lead-id={lead.id} class="archived-row">
+                          <td>
+                            <a href={`/dashboard/${lead.id}`} class="client-name-link">
+                              <div class="client-name">{lead.name}</div>
+                              <div class="client-email">{lead.email}</div>
+                            </a>
+                          </td>
+                          <td><div class="service-interest">{lead.serviceInterest ? lead.serviceInterest.replace(/\s*\(\$[\d,]+(?:\/\w+)?\)/g, '') : '—'}</div></td>
+                          <td><span class="stage-badge stage-archived">Archived</span></td>
+                          <td>—</td>
+                          <td>—</td>
+                          <td class="td-actions">
+                            <div class="row-menu">
+                              <button class="row-menu-btn" aria-label="Actions" aria-expanded="false">⋮</button>
+                              <div class="row-menu-dropdown" hidden>
+                                <button class="row-menu-item restore-btn" data-lead-id={lead.id}>Restore</button>
+                                <button class="row-menu-item row-menu-item--danger delete-btn" data-lead-id={lead.id} data-name={lead.name}>Delete</button>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  )}
+                </table>
+              </div>
+              {archivedLeads.length > 0 && (
+                <div class="archived-toggle-row">
+                  <button class="archived-toggle" id="archived-toggle">
+                    Show archived ({archivedLeads.length})
+                  </button>
+                </div>
+              )}
+            </section>
+          )}
+
+        </div>
+      </main>
+    </div>
+  )}
+
+  <!-- ═══════════════════════════════════════════
+       NEW INVOICE MODAL
+  ════════════════════════════════════════════ -->
+  <div id="invoice-modal" class="modal" aria-hidden="true">
+    <div class="modal-backdrop"></div>
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h2>New Invoice</h2>
+        <button class="modal-close" aria-label="Close">&times;</button>
+      </div>
+      <form id="invoice-form" class="modal-body">
+        <div class="form-row">
+          <label for="inv-name">Client Name</label>
+          <input type="text" id="inv-name" name="clientName" required placeholder="Jane Founder" />
+        </div>
+        <div class="form-row">
+          <label for="inv-email">Client Email</label>
+          <input type="email" id="inv-email" name="clientEmail" required placeholder="jane@example.com" />
+        </div>
+        <div class="form-row">
+          <label for="inv-service">Service</label>
+          <select id="inv-service" name="service">
+            <option value="Clarity Session">Clarity Session</option>
+            <option value="Store Launch Sprint">Store Launch Sprint</option>
+            <option value="Insider Retainer">Insider Retainer</option>
+            <option value="Custom">Custom</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label for="inv-amount">Amount (USD)</label>
+          <input type="number" id="inv-amount" name="amount" required min="1" step="0.01" placeholder="500" />
+        </div>
+        <div class="form-row">
+          <label for="inv-desc">Description</label>
+          <textarea id="inv-desc" name="description" rows="3" placeholder="90-min store audit + written action plan"></textarea>
+        </div>
+        <div id="invoice-feedback" class="form-feedback"></div>
+        <div class="modal-actions">
+          <button type="button" class="btn-secondary modal-close-btn">Cancel</button>
+          <button type="submit" class="btn-primary" id="send-invoice-btn">Send Invoice</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       FOLLOW-UP MODAL
+  ════════════════════════════════════════════ -->
+  <div id="followup-modal" class="modal" aria-hidden="true">
+    <div class="modal-backdrop"></div>
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h2>Send Follow-up</h2>
+        <button class="modal-close-followup" aria-label="Close">&times;</button>
+      </div>
+      <form id="followup-form" class="modal-body">
+        <div class="form-row">
+          <label for="fu-to">To</label>
+          <input type="email" id="fu-to" name="to" required />
+        </div>
+        <div class="form-row">
+          <label for="fu-subject">Subject</label>
+          <input type="text" id="fu-subject" name="subject" required value="Quick note from Travis" />
+        </div>
+        <div class="form-row">
+          <label for="fu-body">Message</label>
+          <textarea id="fu-body" name="body" rows="6" required></textarea>
+        </div>
+        <div id="followup-feedback" class="form-feedback"></div>
+        <div class="modal-actions">
+          <button type="button" class="btn-secondary modal-close-followup-btn">Cancel</button>
+          <button type="submit" class="btn-primary">Send Email</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       NEW LEAD MODAL
+  ════════════════════════════════════════════ -->
+  <div id="new-lead-modal" class="modal" aria-hidden="true">
+    <div class="modal-backdrop"></div>
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h2>New Lead</h2>
+        <button class="modal-close-lead" aria-label="Close">&times;</button>
+      </div>
+      <form id="new-lead-form" class="modal-body">
+        <div class="form-row">
+          <label for="nl-name">Name *</label>
+          <input type="text" id="nl-name" name="name" required placeholder="Jane Founder" />
+        </div>
+        <div class="form-row">
+          <label for="nl-email">Email *</label>
+          <input type="email" id="nl-email" name="email" required placeholder="jane@example.com" />
+        </div>
+        <div class="form-row">
+          <label for="nl-service">Service Interest</label>
+          <select id="nl-service" name="serviceInterest">
+            <option value="">— not set —</option>
+            <option value="Clarity Session">Clarity Session ($500)</option>
+            <option value="Store Launch Sprint">Store Launch Sprint ($2,500)</option>
+            <option value="Insider Retainer">Insider Retainer ($3,500/mo)</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label for="nl-stage">Stage</label>
+          <select id="nl-stage" name="stage">
+            <option value="Lead">Lead</option>
+            <option value="Call Scheduled">Call Scheduled</option>
+            <option value="Proposal Sent">Proposal Sent</option>
+            <option value="Active">Active</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label for="nl-store">Store URL</label>
+          <input type="text" id="nl-store" name="storeUrl" placeholder="example.myshopify.com" />
+        </div>
+        <div class="form-row">
+          <label for="nl-notes">Notes</label>
+          <textarea id="nl-notes" name="notes" rows="3" placeholder="How they found you, what they need..."></textarea>
+        </div>
+        <div id="new-lead-feedback" class="form-feedback"></div>
+        <div class="modal-actions">
+          <button type="button" class="btn-secondary modal-close-lead-btn">Cancel</button>
+          <button type="submit" class="btn-primary">Add Lead</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+</BaseLayout>
+
+<style>
+  /* ── Auth ── */
+  .auth-screen {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--color-bg-alt);
+  }
+
+  .auth-card {
+    background: var(--color-bg);
+    padding: var(--space-12);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
+    text-align: center;
+    max-width: 400px;
+    width: 100%;
+  }
+
+  .auth-card h1 {
+    font-size: var(--text-2xl);
+    margin-bottom: var(--space-2);
+  }
+
+  .auth-card p {
+    color: var(--color-text-secondary);
+    margin-bottom: var(--space-6);
+  }
+
+  .auth-card form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+  }
+
+  .auth-card input {
+    padding: var(--space-3) var(--space-4);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    font-size: var(--text-base);
+    font-family: inherit;
+  }
+
+  .auth-card button {
+    padding: var(--space-3) var(--space-6);
+    background: var(--color-accent);
+    color: white;
+    border: none;
+    border-radius: var(--radius-md);
+    font-size: var(--text-base);
+    font-family: inherit;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background var(--duration-fast) var(--ease);
+  }
+
+  .auth-card button:hover {
+    background: var(--color-accent-hover);
+  }
+
+  .error {
+    color: #e53e3e;
+    font-size: var(--text-sm);
+    margin-top: var(--space-4);
+  }
+
+  /* ── Dashboard shell ── */
+  .dashboard {
+    min-height: 100vh;
+    background: var(--color-bg-alt);
+  }
+
+  /* ── Buttons ── */
+  .btn-primary {
+    padding: var(--space-3) var(--space-5);
+    background: var(--color-accent);
+    color: white;
+    border: none;
+    border-radius: var(--radius-md);
+    font-family: inherit;
+    font-size: var(--text-sm);
+    font-weight: 500;
+    cursor: pointer;
+    transition: background var(--duration-fast) var(--ease);
+  }
+
+  .btn-primary:hover { background: var(--color-accent-hover); }
+
+  .btn-secondary {
+    padding: var(--space-3) var(--space-4);
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    font-family: inherit;
+    font-size: var(--text-sm);
+    cursor: pointer;
+    transition: all var(--duration-fast) var(--ease);
+  }
+
+  .btn-secondary:hover {
+    border-color: var(--color-accent);
+    color: var(--color-accent);
+  }
+
+  /* ── Dashboard main ── */
+  .dashboard-main {
+    padding: var(--space-8) 0;
+  }
+
+  /* ── Next Call card ── */
+  .next-call-card {
+    display: flex;
+    align-items: center;
+    gap: var(--space-6);
+    padding: var(--space-4) var(--space-6);
+    background: var(--color-bg);
+    border: 1px solid var(--color-accent);
+    border-radius: var(--radius-md);
+    margin-bottom: var(--space-6);
+    text-decoration: none;
+    transition: background 0.15s;
+  }
+
+  .next-call-card:hover {
+    background: var(--color-bg-alt);
+  }
+
+  .next-call-label {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--color-accent);
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .next-call-info {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    flex-wrap: wrap;
+  }
+
+  .next-call-name {
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--color-text);
+  }
+
+  .next-call-dot {
+    color: var(--color-text-tertiary);
+  }
+
+  .next-call-time {
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    color: var(--color-text-secondary);
+  }
+
+  /* ── Stats strip ── */
+  .stats-strip {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: var(--space-4);
+    margin-bottom: var(--space-6);
+  }
+
+  @media (max-width: 768px) {
+    .stats-strip { grid-template-columns: repeat(2, 1fr); }
+  }
+
+  .stat-card {
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    padding: var(--space-5) var(--space-6);
+  }
+
+  .stat-label {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--color-text-tertiary);
+    margin-bottom: var(--space-1);
+  }
+
+  .stat-value {
+    font-size: var(--text-2xl);
+    font-weight: 600;
+    color: var(--color-text);
+    line-height: 1.1;
+    margin-bottom: 4px;
+  }
+
+  .stat-sub {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--color-text-tertiary);
+  }
+
+  .stat-card--alert { border-color: #fed7d7; }
+  .stat-value--alert { color: #e53e3e; }
+
+  /* ── Section header ── */
+  .section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--space-4);
+  }
+
+  .section-header h2 {
+    font-size: var(--text-xl);
+    margin: 0;
+  }
+
+  .header-actions {
+    display: flex;
+    gap: var(--space-2);
+  }
+
+  /* ── Empty state ── */
+  .empty-state {
+    text-align: center;
+    padding: var(--space-12) var(--space-6);
+    color: var(--color-text-secondary);
+  }
+
+  /* ── Client table ── */
+  .clients-table .client-name {
+    font-weight: 500;
+  }
+
+  .clients-table .client-email {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--color-text-tertiary);
+    margin-top: 2px;
+  }
+
+  .clients-table .client-store a {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--color-accent);
+  }
+
+  .client-meeting {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--color-accent);
+    margin-top: 3px;
+  }
+
+  .client-time {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--color-text-tertiary);
+    margin-top: 3px;
+  }
+
+  .service-interest {
+    font-size: var(--text-sm);
+  }
+
+  .store-status-sep {
+    color: var(--color-text-tertiary);
+  }
+
+  .stage-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 500;
+  }
+
+  .stage-badge::before {
+    content: '';
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: currentColor;
+  }
+
+  .stage-active       { color: #38a169; }
+  .stage-lead         { color: #d69e2e; }
+  .stage-call-scheduled { color: #4299e1; }
+  .stage-proposal-sent  { color: var(--color-accent); }
+  .stage-closed       { color: var(--color-text-tertiary); }
+  .stage-archived     { color: var(--color-text-tertiary); }
+
+  /* ── Archive/Delete ── */
+  .btn-danger {
+    background: transparent;
+    border: 1px solid var(--color-border);
+    font-family: inherit;
+    cursor: pointer;
+    transition: all var(--duration-fast) var(--ease);
+    color: var(--color-text-tertiary);
+  }
+
+  .btn-danger:hover {
+    border-color: #e53e3e;
+    color: #e53e3e;
+  }
+
+  .archived-section { display: none; }
+  .archived-section.visible { display: table-row-group; }
+
+  .archived-divider td {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--color-text-tertiary);
+    background: var(--color-bg-alt);
+    padding: var(--space-2) var(--space-4);
+  }
+
+  .archived-row { opacity: 0.6; }
+
+  .archived-toggle-row {
+    padding: var(--space-4) 0 var(--space-2);
+    display: flex;
+  }
+
+  .archived-toggle {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--color-text-tertiary);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    transition: color 0.15s;
+  }
+
+  .archived-toggle:hover { color: var(--color-text); }
+
+  .invoice-status {
+    display: inline-block;
+    padding: 2px var(--space-2);
+    border-radius: var(--radius-sm);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  a.invoice-status { text-decoration: none; }
+  a.invoice-status:hover { text-decoration: underline; }
+
+  .status-paid { color: #38a169; }
+  .status-open { color: #d69e2e; }
+  .status-draft { color: var(--color-text-tertiary); }
+  .status-void, .status-uncollectible { color: #e53e3e; }
+  .status-none { color: var(--color-text-tertiary); }
+
+  /* ── Clickable row ── */
+  .clickable-row {
+    cursor: pointer;
+  }
+
+  .clickable-row:hover td {
+    background: var(--color-bg-alt);
+  }
+
+  /* ── Clickable name cell ── */
+  .client-name-link {
+    display: block;
+    text-decoration: none;
+    color: inherit;
+  }
+
+  .client-name-link:hover .client-name {
+    color: var(--color-accent);
+  }
+
+  .client-name-link .client-store {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--color-text-tertiary);
+  }
+
+  /* ── Row action menu ── */
+  .td-actions {
+    width: 40px;
+    text-align: right;
+  }
+
+  .row-menu {
+    position: relative;
+    display: inline-block;
+  }
+
+  .row-menu-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 18px;
+    color: var(--color-text);
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-sm);
+    line-height: 1;
+    transition: background 0.15s;
+  }
+
+  .row-menu-btn:hover {
+    background: var(--color-bg-alt);
+  }
+
+  .row-menu-dropdown {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 4px);
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+    min-width: 130px;
+    z-index: 100;
+    overflow: hidden;
+  }
+
+  .row-menu-item {
+    display: block;
+    width: 100%;
+    padding: var(--space-3) var(--space-5);
+    background: none;
+    border: none;
+    text-align: left;
+    font-family: inherit;
+    font-size: var(--text-sm);
+    color: var(--color-text);
+    cursor: pointer;
+    transition: background 0.12s;
+  }
+
+  .row-menu-item:hover {
+    background: var(--color-bg-alt);
+  }
+
+  .row-menu-item--danger {
+    color: #e53e3e;
+  }
+
+  .row-menu-item--danger:hover {
+    background: #fff5f5;
+  }
+
+  .invoice-link {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--color-accent);
+  }
+
+  .mono {
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+  }
+
+
+  /* ── Sections ── */
+  .section {
+    background: var(--color-bg);
+    padding: var(--space-6);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--color-border);
+    margin-bottom: var(--space-6);
+  }
+
+  .section h2 {
+    font-size: var(--text-lg);
+    margin-bottom: var(--space-4);
+  }
+
+  .section h3 {
+    font-size: var(--text-base);
+    font-weight: 600;
+    margin-bottom: var(--space-4);
+  }
+
+  .two-column {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--space-6);
+  }
+
+  @media (max-width: 768px) {
+    .two-column { grid-template-columns: 1fr; }
+  }
+
+  /* ── Tables ── */
+  .table-container { overflow-x: auto; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--text-sm);
+  }
+
+  th, td {
+    padding: var(--space-4) var(--space-5);
+    text-align: left;
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  th {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-text-tertiary);
+    font-weight: 500;
+  }
+
+  td { color: var(--color-text); }
+
+  td:last-child { text-align: right; font-family: var(--font-mono); }
+  th:last-child { text-align: right; }
+
+  .clients-table td:last-child { text-align: left; font-family: inherit; }
+  .clients-table th:last-child { text-align: left; }
+
+  .empty {
+    color: var(--color-text-tertiary);
+    font-style: italic;
+  }
+
+
+  /* ── Modal ── */
+  .modal {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .modal.open {
+    display: flex;
+  }
+
+  .modal-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+  }
+
+  .modal-dialog {
+    position: relative;
+    background: var(--color-bg);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
+    width: 100%;
+    max-width: 480px;
+    margin: var(--space-4);
+  }
+
+  .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--space-6);
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .modal-header h2 {
+    font-size: var(--text-xl);
+    margin: 0;
+  }
+
+  .modal-close, .modal-close-followup {
+    background: none;
+    border: none;
+    font-size: var(--text-2xl);
+    cursor: pointer;
+    color: var(--color-text-tertiary);
+    line-height: 1;
+    padding: 0;
+  }
+
+  .modal-close:hover, .modal-close-followup:hover {
+    color: var(--color-text);
+  }
+
+  .modal-body {
+    padding: var(--space-6);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+  }
+
+  .form-row {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+
+  .form-row label {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-text-tertiary);
+  }
+
+  .form-row input,
+  .form-row select,
+  .form-row textarea {
+    padding: var(--space-3) var(--space-4);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    font-size: var(--text-sm);
+    font-family: inherit;
+    background: var(--color-bg);
+    color: var(--color-text);
+    transition: border-color var(--duration-fast) var(--ease);
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .form-row input:focus,
+  .form-row select:focus,
+  .form-row textarea:focus {
+    outline: none;
+    border-color: var(--color-accent);
+  }
+
+  .form-row textarea { resize: vertical; }
+
+  .form-feedback {
+    font-size: var(--text-sm);
+    min-height: 1.4em;
+  }
+
+  .form-feedback.success { color: #38a169; }
+  .form-feedback.error { color: #e53e3e; }
+
+  .modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--space-3);
+    padding-top: var(--space-2);
+  }
+
+  /* ── Wide modal (edit lead) ── */
+  .modal-dialog--wide {
+    max-width: 800px;
+  }
+
+  .modal-subtitle {
+    font-size: var(--text-sm);
+    color: var(--color-text-tertiary);
+    margin: var(--space-1) 0 0;
+    font-family: var(--font-mono);
+  }
+
+  .modal-body--split {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-6);
+  }
+
+  @media (max-width: 600px) {
+    .modal-body--split { grid-template-columns: 1fr; }
+  }
+
+  .lead-intake h3,
+  .lead-edit h3 {
+    font-size: var(--text-sm);
+    font-family: var(--font-mono);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-text-tertiary);
+    margin-bottom: var(--space-4);
+  }
+
+  .intake-field {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-bottom: var(--space-3);
+  }
+
+  .intake-label {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--color-text-tertiary);
+  }
+
+  .intake-value {
+    font-size: var(--text-sm);
+    color: var(--color-text);
+  }
+
+  .intake-value--long {
+    white-space: pre-wrap;
+    line-height: 1.5;
+  }
+
+  .form-hint {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--color-text-tertiary);
+    margin-top: 2px;
+  }
+
+  /* ── Pipeline Analytics ── */
+  .pipeline-section {
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    padding: var(--space-5) var(--space-6);
+    margin-bottom: var(--space-6);
+    display: flex;
+    gap: var(--space-8);
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .pipeline-funnel {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+    flex: 1;
+  }
+
+  .funnel-stage {
+    text-align: center;
+    min-width: 64px;
+  }
+
+  .funnel-count {
+    font-size: var(--text-xl);
+    font-weight: 600;
+    color: var(--color-text);
+    line-height: 1.2;
+  }
+
+  .funnel-label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--color-text-tertiary);
+    margin-top: 2px;
+  }
+
+  .funnel-arrow {
+    color: var(--color-border-strong);
+    font-size: var(--text-lg);
+    padding: 0 var(--space-1);
+    flex-shrink: 0;
+  }
+
+  .pipeline-metrics {
+    display: flex;
+    gap: var(--space-6);
+    border-left: 1px solid var(--color-border);
+    padding-left: var(--space-8);
+  }
+
+  .pipeline-metric {
+    text-align: center;
+    min-width: 72px;
+  }
+
+  .pipeline-metric__value {
+    font-size: var(--text-xl);
+    font-weight: 600;
+    color: var(--color-accent);
+  }
+
+  .pipeline-metric__label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--color-text-tertiary);
+    margin-top: 2px;
+  }
+
+  .pipeline-metric__sub {
+    font-size: 10px;
+    color: var(--color-text-tertiary);
+    margin-top: 2px;
+  }
+
+  @media (max-width: 768px) {
+    .pipeline-section { flex-direction: column; align-items: flex-start; }
+    .pipeline-metrics { border-left: none; border-top: 1px solid var(--color-border); padding-left: 0; padding-top: var(--space-4); }
+  }
+</style>
+
+<script>
+  // ── Archive toggle ──
+  document.getElementById('archived-toggle')?.addEventListener('click', (e) => {
+    const btn = e.currentTarget as HTMLButtonElement;
+    const body = document.getElementById('archived-leads-body');
+    if (!body) return;
+    const isVisible = body.classList.contains('visible');
+    body.classList.toggle('visible', !isVisible);
+    const count = body.querySelectorAll('.archived-row').length;
+    btn.textContent = isVisible ? `Show archived (${count})` : `Hide archived`;
+  });
+
+  // ── Clickable rows ──
+  document.querySelectorAll<HTMLTableRowElement>('.clickable-row').forEach(row => {
+    row.addEventListener('click', (e) => {
+      // Don't navigate if clicking the menu button or dropdown
+      if ((e.target as HTMLElement).closest('.row-menu')) return;
+      const href = row.dataset.href;
+      if (href) window.location.href = href;
+    });
+  });
+
+  // ── Row action menu toggles ──
+  document.addEventListener('click', (e) => {
+    const target = e.target as HTMLElement;
+    const menuBtn = target.closest('.row-menu-btn') as HTMLButtonElement | null;
+
+    // Close all open menus first
+    document.querySelectorAll('.row-menu-dropdown').forEach(d => {
+      (d as HTMLElement).hidden = true;
+    });
+    document.querySelectorAll('.row-menu-btn').forEach(b => {
+      b.setAttribute('aria-expanded', 'false');
+    });
+
+    // If a menu button was clicked, open its dropdown
+    if (menuBtn) {
+      e.stopPropagation();
+      const dropdown = menuBtn.nextElementSibling as HTMLElement;
+      if (dropdown) {
+        dropdown.hidden = false;
+        menuBtn.setAttribute('aria-expanded', 'true');
+      }
+    }
+  });
+
+  // ── Archive client ──
+  document.querySelectorAll<HTMLButtonElement>('.archive-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.leadId!;
+      btn.disabled = true; btn.textContent = '…';
+      try {
+        const res = await fetch(`/api/leads/${id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ stage: 'Archived' }),
+        });
+        if (res.ok) location.reload();
+        else { btn.disabled = false; btn.textContent = 'Archive'; }
+      } catch { btn.disabled = false; btn.textContent = 'Archive'; }
+    });
+  });
+
+  // ── Restore client ──
+  document.querySelectorAll<HTMLButtonElement>('.restore-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.leadId!;
+      btn.disabled = true; btn.textContent = '…';
+      try {
+        const res = await fetch(`/api/leads/${id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ stage: 'Lead' }),
+        });
+        if (res.ok) location.reload();
+        else { btn.disabled = false; btn.textContent = 'Restore'; }
+      } catch { btn.disabled = false; btn.textContent = 'Restore'; }
+    });
+  });
+
+  // ── Delete client ──
+  document.querySelectorAll<HTMLButtonElement>('.delete-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.leadId!;
+      const name = btn.dataset.name ?? 'this client';
+      if (!confirm(`Permanently delete ${name}? This cannot be undone.`)) return;
+      btn.disabled = true; btn.textContent = '…';
+      try {
+        const res = await fetch(`/api/leads/${id}`, { method: 'DELETE' });
+        if (res.ok) {
+          const row = btn.closest('tr');
+          row?.remove();
+        } else { btn.disabled = false; btn.textContent = 'Delete'; }
+      } catch { btn.disabled = false; btn.textContent = 'Delete'; }
+    });
+  });
+
+  // ── Invoice modal ──
+  const invoiceModal = document.getElementById('invoice-modal')!;
+  const invoiceForm = document.getElementById('invoice-form') as HTMLFormElement;
+  const invoiceFeedback = document.getElementById('invoice-feedback')!;
+  const sendInvoiceBtn = document.getElementById('send-invoice-btn') as HTMLButtonElement;
+
+  document.getElementById('new-invoice-btn')?.addEventListener('click', () => {
+    invoiceModal.classList.add('open');
+    invoiceModal.setAttribute('aria-hidden', 'false');
+  });
+
+  function closeInvoiceModal() {
+    invoiceModal.classList.remove('open');
+    invoiceModal.setAttribute('aria-hidden', 'true');
+    invoiceFeedback.textContent = '';
+    invoiceFeedback.className = 'form-feedback';
+  }
+
+  invoiceModal.querySelector('.modal-close')?.addEventListener('click', closeInvoiceModal);
+  invoiceModal.querySelector('.modal-close-btn')?.addEventListener('click', closeInvoiceModal);
+  invoiceModal.querySelector('.modal-backdrop')?.addEventListener('click', closeInvoiceModal);
+
+  invoiceForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    sendInvoiceBtn.disabled = true;
+    sendInvoiceBtn.textContent = 'Sending…';
+    invoiceFeedback.textContent = '';
+    invoiceFeedback.className = 'form-feedback';
+
+    const data = {
+      clientName: (invoiceForm.elements.namedItem('clientName') as HTMLInputElement).value,
+      clientEmail: (invoiceForm.elements.namedItem('clientEmail') as HTMLInputElement).value,
+      service: (invoiceForm.elements.namedItem('service') as HTMLSelectElement).value,
+      amount: parseFloat((invoiceForm.elements.namedItem('amount') as HTMLInputElement).value),
+      description: (invoiceForm.elements.namedItem('description') as HTMLTextAreaElement).value,
+    };
+
+    try {
+      const res = await fetch('/api/stripe/invoice', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      const json = await res.json();
+      if (res.ok) {
+        invoiceFeedback.textContent = `Invoice sent to ${data.clientEmail}`;
+        invoiceFeedback.className = 'form-feedback success';
+        invoiceForm.reset();
+        setTimeout(closeInvoiceModal, 2000);
+      } else {
+        invoiceFeedback.textContent = json.error ?? 'Something went wrong';
+        invoiceFeedback.className = 'form-feedback error';
+      }
+    } catch {
+      invoiceFeedback.textContent = 'Network error — try again';
+      invoiceFeedback.className = 'form-feedback error';
+    } finally {
+      sendInvoiceBtn.disabled = false;
+      sendInvoiceBtn.textContent = 'Send Invoice';
+    }
+  });
+
+  // ── Follow-up modal ──
+  const followupModal = document.getElementById('followup-modal')!;
+  const followupForm = document.getElementById('followup-form') as HTMLFormElement;
+  const followupFeedback = document.getElementById('followup-feedback')!;
+
+  document.querySelectorAll<HTMLButtonElement>('.followup-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const email = btn.dataset.email ?? '';
+      const name = btn.dataset.name ?? '';
+      const invoiceUrl = btn.dataset.invoiceUrl ?? '';
+
+      (followupForm.elements.namedItem('to') as HTMLInputElement).value = email;
+      (followupForm.elements.namedItem('subject') as HTMLInputElement).value = `Quick note from Travis`;
+
+      const bodyLines = [
+        `Hi ${name.split(' ')[0]},`,
+        '',
+        invoiceUrl
+          ? `Just a quick check-in — your invoice is still open.\n\nView and pay here: ${invoiceUrl}`
+          : 'Just following up on our conversation — let me know if you have any questions.',
+        '',
+        '— Travis',
+      ];
+      (followupForm.elements.namedItem('body') as HTMLTextAreaElement).value = bodyLines.join('\n');
+
+      followupModal.classList.add('open');
+      followupModal.setAttribute('aria-hidden', 'false');
+    });
+  });
+
+  function closeFollowupModal() {
+    followupModal.classList.remove('open');
+    followupModal.setAttribute('aria-hidden', 'true');
+    followupFeedback.textContent = '';
+    followupFeedback.className = 'form-feedback';
+  }
+
+  followupModal.querySelector('.modal-close-followup')?.addEventListener('click', closeFollowupModal);
+  followupModal.querySelector('.modal-close-followup-btn')?.addEventListener('click', closeFollowupModal);
+  followupModal.querySelector('.modal-backdrop')?.addEventListener('click', closeFollowupModal);
+
+  // ── New Lead modal ──
+  const newLeadModal = document.getElementById('new-lead-modal')!;
+  const newLeadForm = document.getElementById('new-lead-form') as HTMLFormElement;
+  const newLeadFeedback = document.getElementById('new-lead-feedback')!;
+
+  document.getElementById('new-lead-btn')?.addEventListener('click', () => {
+    newLeadModal.classList.add('open');
+    newLeadModal.setAttribute('aria-hidden', 'false');
+  });
+
+  function closeNewLeadModal() {
+    newLeadModal.classList.remove('open');
+    newLeadModal.setAttribute('aria-hidden', 'true');
+    newLeadFeedback.textContent = '';
+    newLeadFeedback.className = 'form-feedback';
+    newLeadForm.reset();
+  }
+
+  newLeadModal.querySelector('.modal-close-lead')?.addEventListener('click', closeNewLeadModal);
+  newLeadModal.querySelector('.modal-close-lead-btn')?.addEventListener('click', closeNewLeadModal);
+  newLeadModal.querySelector('.modal-backdrop')?.addEventListener('click', closeNewLeadModal);
+
+  newLeadForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = newLeadForm.querySelector<HTMLButtonElement>('[type="submit"]')!;
+    btn.disabled = true;
+    btn.textContent = 'Saving…';
+    newLeadFeedback.textContent = '';
+    newLeadFeedback.className = 'form-feedback';
+
+    const data = {
+      name: (newLeadForm.elements.namedItem('name') as HTMLInputElement).value.trim(),
+      email: (newLeadForm.elements.namedItem('email') as HTMLInputElement).value.trim(),
+      serviceInterest: (newLeadForm.elements.namedItem('serviceInterest') as HTMLSelectElement).value,
+      stage: (newLeadForm.elements.namedItem('stage') as HTMLSelectElement).value,
+      storeUrl: (newLeadForm.elements.namedItem('storeUrl') as HTMLInputElement).value.trim(),
+      notes: (newLeadForm.elements.namedItem('notes') as HTMLTextAreaElement).value.trim(),
+    };
+
+    try {
+      const res = await fetch('/api/leads/manual', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      const json = await res.json();
+      if (res.ok) {
+        newLeadFeedback.textContent = 'Lead added ✓ — reloading…';
+        newLeadFeedback.className = 'form-feedback success';
+        setTimeout(() => location.reload(), 1200);
+      } else {
+        newLeadFeedback.textContent = json.error ?? 'Something went wrong';
+        newLeadFeedback.className = 'form-feedback error';
+        btn.disabled = false;
+        btn.textContent = 'Add Lead';
+      }
+    } catch {
+      newLeadFeedback.textContent = 'Network error — try again';
+      newLeadFeedback.className = 'form-feedback error';
+      btn.disabled = false;
+      btn.textContent = 'Add Lead';
+    }
+  });
+
+  followupForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const submitBtn = followupForm.querySelector<HTMLButtonElement>('[type="submit"]')!;
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Sending…';
+
+    const to = (followupForm.elements.namedItem('to') as HTMLInputElement).value;
+    const subject = (followupForm.elements.namedItem('subject') as HTMLInputElement).value;
+    const body = (followupForm.elements.namedItem('body') as HTMLTextAreaElement).value;
+    const html = body.split('\n').map(l => `<p>${l}</p>`).join('');
+
+    try {
+      const res = await fetch('/api/email/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to, subject, html }),
+      });
+      const json = await res.json();
+      if (res.ok) {
+        followupFeedback.textContent = `Email sent to ${to}`;
+        followupFeedback.className = 'form-feedback success';
+        setTimeout(closeFollowupModal, 2000);
+      } else {
+        followupFeedback.textContent = json.error ?? 'Something went wrong';
+        followupFeedback.className = 'form-feedback error';
+      }
+    } catch {
+      followupFeedback.textContent = 'Network error — try again';
+      followupFeedback.className = 'form-feedback error';
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Send Email';
+    }
+  });
+
+</script>

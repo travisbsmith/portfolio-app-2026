@@ -1,0 +1,111 @@
+---
+import '../styles/global.css';
+import '../styles/animations.css';
+
+interface Props {
+  title: string;
+  description?: string;
+  image?: string;
+  jsonLd?: Record<string, any> | Record<string, any>[];
+}
+
+const { 
+  title, 
+  description = "Travis Smith - Design Leader with 17+ years of experience building products and leading cross-functional design teams.",
+  image = "/images/og-image.jpg",
+  jsonLd,
+} = Astro.props;
+
+const canonicalURL = new URL(Astro.url.pathname, Astro.site);
+
+// Default Person structured data (used on every page)
+const personSchema = {
+  "@context": "https://schema.org",
+  "@type": "Person",
+  "name": "Travis Smith",
+  "url": "https://fully-operational.com",
+  "jobTitle": "Head of Design, People Experiences",
+  "worksFor": { "@type": "Organization", "name": "Deel" },
+  "description": "Design leader with 17+ years building products and leading teams at Shopify, Grubhub, and Deel. Available for consulting and fractional design leadership.",
+  "sameAs": [
+    "https://www.linkedin.com/in/travisbsmithux/",
+    "https://substack.com/@travisbsmith"
+  ],
+  "knowsAbout": [
+    "Product Design",
+    "Design Leadership",
+    "Design Systems",
+    "UX Strategy",
+    "Team Building",
+    "Shopify",
+    "E-commerce Design",
+    "Fractional Design Leadership",
+    "Design Operations",
+    "User Research",
+    "Content Strategy",
+    "Cross-functional Team Leadership",
+    "Design Consulting"
+  ],
+  "email": "hello@fully-operational.com",
+  "address": {
+    "@type": "PostalAddress",
+    "addressLocality": "Kansas City",
+    "addressRegion": "MO",
+    "addressCountry": "US"
+  },
+};
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="canonical" href={canonicalURL} />
+    
+    <!-- Primary Meta Tags -->
+    <title>{title}</title>
+    <meta name="title" content={title} />
+    <meta name="description" content={description} />
+    <meta name="author" content="Travis Smith" />
+    
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content={canonicalURL} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:image" content={new URL(image, Astro.site ?? 'https://fully-operational.com').toString()} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content={title} />
+    
+    <!-- Twitter -->
+    <meta property="twitter:card" content="summary_large_image" />
+    <meta property="twitter:url" content={canonicalURL} />
+    <meta property="twitter:title" content={title} />
+    <meta property="twitter:description" content={description} />
+    <meta property="twitter:image" content={new URL(image, Astro.site ?? 'https://fully-operational.com').toString()} />
+    <meta property="twitter:image:alt" content={title} />
+    
+    <!-- Google Fonts - Clean & Technical -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    
+    <meta name="generator" content={Astro.generator} />
+    
+    <!-- AI/LLM Content Discovery -->
+    <link rel="alternate" type="text/plain" href="/llms.txt" title="LLM-readable site overview" />
+    
+    <!-- Structured Data -->
+    <script type="application/ld+json" set:html={JSON.stringify(personSchema)} />
+    {jsonLd && (Array.isArray(jsonLd) ? jsonLd : [jsonLd]).map((schema) => (
+      <script type="application/ld+json" set:html={JSON.stringify(schema)} />
+    ))}
+    
+  </head>
+  <body>
+    <slot />
+  </body>
+</html>
