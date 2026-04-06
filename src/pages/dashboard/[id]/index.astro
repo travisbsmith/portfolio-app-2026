@@ -443,7 +443,10 @@ const lastActivityDaysAgo = lastActivity
       <!-- Intake Form: full for Lead only, collapsible for all other stages -->
       <section class="card">
         {lead.stage === 'Lead' ? (
-          <div class="card__header"><h2>Intake Form</h2></div>
+          <div class="card__header">
+            <h2>Intake Form</h2>
+            <button class="card-action-link intake-edit-btn" id="intake-edit-btn" type="button">Edit</button>
+          </div>
         ) : (
           <button class="card__toggle" id="intake-toggle" aria-expanded="false">
             <span class="card__toggle-label">Intake Form</span>
@@ -479,6 +482,55 @@ const lastActivityDaysAgo = lastActivity
                 <span class="intake-value intake-value--long">{lead.additionalNotes}</span>
               </div>
             )}
+          </div>
+
+          <!-- Intake edit form (hidden until Edit is clicked) -->
+          <div class="card__body intake-edit-form" id="intake-edit-form" hidden>
+            <div class="intake-edit-row">
+              <label class="intake-edit-label" for="ie-store-url">Store URL</label>
+              <input class="intake-edit-input" id="ie-store-url" type="url" value={lead.storeUrl ?? ''} />
+            </div>
+            <div class="intake-edit-row">
+              <label class="intake-edit-label" for="ie-store-status">Store Status</label>
+              <select class="intake-edit-input" id="ie-store-status">
+                {['Not started yet', 'In progress, not live', 'Live and selling'].map(s => (
+                  <option value={s} selected={s === lead.storeStatus}>{s}</option>
+                ))}
+              </select>
+            </div>
+            <div class="intake-edit-row">
+              <label class="intake-edit-label" for="ie-service">Interested In</label>
+              <select class="intake-edit-input" id="ie-service">
+                {['Clarity Session ($500)', 'Insider Retainer ($3,500/mo)', 'Store Launch Sprint ($2,500)', 'Not sure yet'].map(s => (
+                  <option value={s} selected={s === lead.serviceInterest || lead.serviceInterest?.startsWith(s.split(' (')[0])}>{s}</option>
+                ))}
+              </select>
+            </div>
+            <div class="intake-edit-row">
+              <label class="intake-edit-label" for="ie-referral">Referral</label>
+              <input class="intake-edit-input" id="ie-referral" type="text" value={lead.referral ?? ''} />
+            </div>
+            <div class="intake-edit-row">
+              <label class="intake-edit-label" for="ie-timezone">Timezone</label>
+              <input class="intake-edit-input" id="ie-timezone" type="text" value={lead.timezone ?? ''} />
+            </div>
+            <div class="intake-edit-row">
+              <label class="intake-edit-label" for="ie-launch-date">Launch Date</label>
+              <input class="intake-edit-input" id="ie-launch-date" type="text" value={lead.launchDate ?? ''} />
+            </div>
+            <div class="intake-edit-row intake-edit-row--full">
+              <label class="intake-edit-label" for="ie-challenge">Their Challenge</label>
+              <textarea class="intake-edit-input intake-edit-textarea" id="ie-challenge" rows="4">{lead.challenge ?? ''}</textarea>
+            </div>
+            <div class="intake-edit-row intake-edit-row--full">
+              <label class="intake-edit-label" for="ie-notes">Their Notes</label>
+              <textarea class="intake-edit-input intake-edit-textarea" id="ie-notes" rows="3">{lead.additionalNotes ?? ''}</textarea>
+            </div>
+            <div class="intake-edit-actions">
+              <button class="btn-primary" id="intake-save-btn" type="button">Save</button>
+              <button class="card-action-link" id="intake-cancel-btn" type="button">Cancel</button>
+              <span class="save-status" id="intake-save-status"></span>
+            </div>
           </div>
         </section>
 
@@ -1251,6 +1303,63 @@ const lastActivityDaysAgo = lastActivity
 
   .intake-value--long {
     white-space: pre-wrap;
+  }
+
+  /* ── Intake edit form ── */
+  .intake-edit-form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+  }
+
+  .intake-edit-row {
+    display: grid;
+    grid-template-columns: 140px 1fr;
+    gap: var(--space-4);
+    align-items: start;
+  }
+
+  .intake-edit-row--full {
+    grid-template-columns: 140px 1fr;
+  }
+
+  .intake-edit-label {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--color-text-tertiary);
+    padding-top: 8px;
+  }
+
+  .intake-edit-input {
+    font-family: var(--font-body);
+    font-size: var(--text-sm);
+    color: var(--color-text);
+    background: var(--color-bg);
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius-sm);
+    padding: var(--space-2) var(--space-3);
+    width: 100%;
+  }
+
+  .intake-edit-input:focus {
+    outline: none;
+    border-color: var(--color-text);
+  }
+
+  .intake-edit-textarea {
+    resize: vertical;
+    min-height: 80px;
+    line-height: 1.5;
+  }
+
+  .intake-edit-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    padding-top: var(--space-2);
+    grid-column: 1 / -1;
   }
 
   /* ── Sidebar ── */
@@ -2388,6 +2497,46 @@ if (intakeToggle && intakeBody) {
     const isOpen = intakeToggle.getAttribute('aria-expanded') === 'true';
     intakeToggle.setAttribute('aria-expanded', String(!isOpen));
     intakeBody.hidden = isOpen;
+  });
+}
+
+// ── Intake edit form ──
+const intakeEditBtn = document.getElementById('intake-edit-btn');
+const intakeEditForm = document.getElementById('intake-edit-form');
+const intakeCancelBtn = document.getElementById('intake-cancel-btn');
+const intakeSaveBtn = document.getElementById('intake-save-btn');
+const intakeSaveStatus = document.getElementById('intake-save-status');
+
+if (intakeEditBtn && intakeEditForm && intakeBody) {
+  intakeEditBtn.addEventListener('click', () => {
+    intakeBody.hidden = true;
+    intakeEditForm.hidden = false;
+    intakeEditBtn.textContent = 'Editing…';
+    intakeEditBtn.disabled = true;
+  });
+
+  intakeCancelBtn?.addEventListener('click', () => {
+    intakeEditForm.hidden = true;
+    intakeBody.hidden = false;
+    intakeEditBtn.textContent = 'Edit';
+    intakeEditBtn.disabled = false;
+    if (intakeSaveStatus) intakeSaveStatus.textContent = '';
+  });
+
+  intakeSaveBtn?.addEventListener('click', async () => {
+    const patch = {
+      storeUrl:        document.getElementById('ie-store-url')?.value ?? '',
+      storeStatus:     document.getElementById('ie-store-status')?.value ?? '',
+      serviceInterest: document.getElementById('ie-service')?.value ?? '',
+      referral:        document.getElementById('ie-referral')?.value ?? '',
+      timezone:        document.getElementById('ie-timezone')?.value ?? '',
+      launchDate:      document.getElementById('ie-launch-date')?.value ?? '',
+      challenge:       document.getElementById('ie-challenge')?.value ?? '',
+      additionalNotes: document.getElementById('ie-notes')?.value ?? '',
+    };
+    await patchLead(patch, intakeSaveStatus);
+    // Reflect changes in the display grid without a full reload
+    setTimeout(() => location.reload(), 600);
   });
 }
 
