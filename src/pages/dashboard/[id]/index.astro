@@ -929,6 +929,45 @@ const lastActivityDaysAgo = lastActivity
         </section>
       )}
 
+      <!-- Reminders toggle -->
+      {(lead.stage === 'Lead' || lead.stage === 'Proposal Sent') && (
+        <section class="card">
+          <div class="card__header"><h2>Reminders</h2></div>
+          <div class="card__body">
+            <div class="reminder-status">
+              {lead.unsubscribed ? (
+                <span class="reminder-badge reminder-badge--off">Client unsubscribed</span>
+              ) : lead.remindersDisabled ? (
+                <span class="reminder-badge reminder-badge--off">Reminders off</span>
+              ) : (
+                <span class="reminder-badge reminder-badge--on">Reminders on</span>
+              )}
+              {!lead.unsubscribed && (
+                <div class="reminder-detail">
+                  {lead.stage === 'Lead' && (
+                    <span>{lead.remindersSentSchedule ?? 0}/4 schedule reminders sent</span>
+                  )}
+                  {lead.stage === 'Proposal Sent' && (
+                    <span>{lead.remindersSentProposal ?? 0}/4 proposal reminders sent</span>
+                  )}
+                </div>
+              )}
+            </div>
+            {!lead.unsubscribed && (
+              <button
+                id="reminder-toggle-btn"
+                class="btn-save"
+                data-disabled={String(!!lead.remindersDisabled)}
+                style="margin-top: var(--space-4); width: 100%"
+              >
+                {lead.remindersDisabled ? 'Turn reminders on' : 'Turn reminders off'}
+              </button>
+            )}
+            <span id="reminder-toggle-status" class="save-status" style="margin-top: var(--space-2); display:block"></span>
+          </div>
+        </section>
+      )}
+
     </aside>
   </div>
 </div>
@@ -1664,6 +1703,40 @@ const lastActivityDaysAgo = lastActivity
     background: var(--color-bg-alt);
     font-size: var(--text-sm);
     margin-bottom: var(--space-3);
+  }
+
+  /* ── Reminders ── */
+  .reminder-status {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+
+  .reminder-badge {
+    display: inline-flex;
+    align-items: center;
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: var(--space-1) var(--space-3);
+    border-radius: var(--radius-sm);
+    width: fit-content;
+  }
+
+  .reminder-badge--on {
+    background: color-mix(in srgb, #38a169 12%, transparent);
+    color: #38a169;
+  }
+
+  .reminder-badge--off {
+    background: color-mix(in srgb, var(--color-text-tertiary) 12%, transparent);
+    color: var(--color-text-tertiary);
+  }
+
+  .reminder-detail {
+    font-size: var(--text-xs);
+    color: var(--color-text-tertiary);
   }
 
   /* ── Stripe ID row ── */
@@ -2774,6 +2847,24 @@ stripeIdSave && stripeIdSave.addEventListener('click', () =>
   patchLead({ stripeCustomerId: document.getElementById('stripe-customer-id').value },
     document.getElementById('stripe-id-status'))
 );
+
+// ── Reminders toggle ──
+const reminderBtn = document.getElementById('reminder-toggle-btn');
+const reminderStatus = document.getElementById('reminder-toggle-status');
+if (reminderBtn && reminderStatus) {
+  reminderBtn.addEventListener('click', async () => {
+    const isDisabled = reminderBtn.dataset.disabled === 'true';
+    const newValue = !isDisabled;
+    await patchLead({ remindersDisabled: newValue }, reminderStatus);
+    reminderBtn.dataset.disabled = String(newValue);
+    reminderBtn.textContent = newValue ? 'Turn reminders on' : 'Turn reminders off';
+    const badge = document.querySelector('.reminder-badge');
+    if (badge) {
+      badge.textContent = newValue ? 'Reminders off' : 'Reminders on';
+      badge.className = 'reminder-badge ' + (newValue ? 'reminder-badge--off' : 'reminder-badge--on');
+    }
+  });
+}
 
 // ── Stage Checklist ──
 document.querySelectorAll('#stage-checklist .check-input').forEach(cb => {

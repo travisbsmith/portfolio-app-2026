@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro';
 import Stripe from 'stripe';
 import { sendEmail } from '../email/send';
+import { getLeads, updateLead } from '../../../lib/leads';
 
 async function writeKvCache(key: string, value: unknown): Promise<void> {
   const token = process.env.KV_REST_API_TOKEN;
@@ -100,6 +101,81 @@ export const GET: APIRoute = async ({ request }) => {
     });
 
     results.push(`Renewal notice sent: ${customer.email}`);
+  }
+
+  // --- Lead reminders ---
+  try {
+    const leads = await getLeads();
+    const now = Date.now();
+    const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+    const CAL_LINK = 'https://cal.com/fullyoperational/intro-chat';
+    const APP_URL = 'https://app.fully-operational.com';
+
+    for (const lead of leads) {
+      if (lead.remindersDisabled || lead.unsubscribed) continue;
+      if (!lead.email || !lead.unsubscribeToken) continue;
+
+      const unsubUrl = `${APP_URL}/api/unsubscribe?token=${lead.unsubscribeToken}`;
+      const unsubLink = `<p style="font-size:12px;color:#999;margin-top:32px"><a href="${unsubUrl}" style="color:#999">Unsubscribe from these reminders</a></p>`;
+      const firstName = lead.name.split(' ')[0];
+
+      // Schedule reminder — stage is still 'Lead' (form submitted, no call booked)
+      if (lead.stage === 'Lead') {
+        const count = lead.remindersSentSchedule ?? 0;
+        if (count >= 4) continue;
+        const startMs = new Date(lead.createdAt).getTime();
+        const lastMs = lead.lastReminderScheduleAt ? new Date(lead.lastReminderScheduleAt).getTime() : startMs;
+        const readyToSend = count === 0 ? (now - startMs >= WEEK_MS) : (now - lastMs >= WEEK_MS);
+        if (!readyToSend) continue;
+
+        await sendEmail({
+          to: lead.email,
+          subject: 'Following up — let\'s find a time',
+          html: `
+            <p>Hi ${firstName},</p>
+            <p>Just following up on your intro call request. I'd love to connect — grab a time here whenever works for you:</p>
+            <p><a href="${CAL_LINK}" style="color:#ff5722">Book your free intro call →</a></p>
+            <p>If this isn't the right time, no worries at all.</p>
+            <p>— Travis<br>travis@fully-operational.com</p>
+            ${unsubLink}
+          `,
+        });
+        await updateLead(lead.id, {
+          remindersSentSchedule: count + 1,
+          lastReminderScheduleAt: new Date().toISOString(),
+        });
+        results.push(`Schedule reminder ${count + 1}/4: ${lead.email}`);
+      }
+
+      // Proposal reminder — stage is 'Proposal Sent'
+      if (lead.stage === 'Proposal Sent' && lead.proposalSentAt) {
+        const count = lead.remindersSentProposal ?? 0;
+        if (count >= 4) continue;
+        const startMs = new Date(lead.proposalSentAt).getTime();
+        const lastMs = lead.lastReminderProposalAt ? new Date(lead.lastReminderProposalAt).getTime() : startMs;
+        const readyToSend = count === 0 ? (now - startMs >= WEEK_MS) : (now - lastMs >= WEEK_MS);
+        if (!readyToSend) continue;
+
+        await sendEmail({
+          to: lead.email,
+          subject: 'Checking in on your proposal',
+          html: `
+            <p>Hi ${firstName},</p>
+            <p>Just checking in on the proposal I sent over. Happy to answer any questions or adjust anything — just reply here.</p>
+            <p>If you'd like to talk it through: <a href="${CAL_LINK}" style="color:#ff5722">grab a time here</a></p>
+            <p>— Travis<br>travis@fully-operational.com</p>
+            ${unsubLink}
+          `,
+        });
+        await updateLead(lead.id, {
+          remindersSentProposal: count + 1,
+          lastReminderProposalAt: new Date().toISOString(),
+        });
+        results.push(`Proposal reminder ${count + 1}/4: ${lead.email}`);
+      }
+    }
+  } catch (e) {
+    console.error('Lead reminder error:', e);
   }
 
   // Write overdue invoice count/amount to KV so dashboard can read it cheaply

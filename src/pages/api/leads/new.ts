@@ -51,6 +51,7 @@ export const POST: APIRoute = async ({ request, url, redirect }) => {
     stage: 'Lead',
     internalNotes: '',
     stripeCustomerId: '',
+    unsubscribeToken: Math.random().toString(36).slice(2) + Date.now().toString(36),
     createdAt: now,
     updatedAt: now,
   };
@@ -87,9 +88,10 @@ export const POST: APIRoute = async ({ request, url, redirect }) => {
     console.error('Failed to send lead notification email:', e);
   }
 
-  // Webhook call → return JSON; direct form post → redirect
-  if (secret) {
-    return new Response(JSON.stringify({ ok: true, id: lead.id }), {
+  // Webhook or fetch call → return JSON; direct form post → redirect
+  const wantsJson = secret || (request.headers.get('accept') ?? '').includes('application/json');
+  if (wantsJson) {
+    return new Response(JSON.stringify({ ok: true, id: lead.id, name: lead.name, email: lead.email }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     });

@@ -41,6 +41,14 @@ export interface Lead {
   proposalSentAt?: string;
   activityLog?: ActivityEntry[];
   deliverables?: Deliverable[];
+  // Reminder automation
+  unsubscribeToken?: string;
+  remindersDisabled?: boolean;
+  unsubscribed?: boolean;
+  remindersSentSchedule?: number;
+  remindersSentProposal?: number;
+  lastReminderScheduleAt?: string;
+  lastReminderProposalAt?: string;
   createdAt: string;
   updatedAt: string;
 }
