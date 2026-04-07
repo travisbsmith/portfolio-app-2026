@@ -7,38 +7,23 @@ export interface TimeEntry {
   createdAt: string;
 }
 
-function kvHeaders(): Record<string, string> {
-  const token = import.meta.env.KV_REST_API_TOKEN ?? process.env?.KV_REST_API_TOKEN;
-  if (!token) throw new Error('KV_REST_API_TOKEN not set');
-  return { Authorization: `Bearer ${token}` };
-}
+import { createClient } from '@vercel/kv';
 
-function kvBase(): string {
-  const base = import.meta.env.KV_REST_API_URL ?? process.env?.KV_REST_API_URL;
-  if (!base) throw new Error('KV_REST_API_URL not set');
-  return base;
-}
+const url = import.meta.env.KV_REST_API_URL ?? process.env?.KV_REST_API_URL;
+const token = import.meta.env.KV_REST_API_TOKEN ?? process.env?.KV_REST_API_TOKEN;
+const kv = createClient({ url: url as string, token: token as string });
 
 export async function getTimeEntries(leadId: string): Promise<TimeEntry[]> {
   try {
-    const res = await fetch(`${kvBase()}/get/time_${leadId}`, { 
-      headers: kvHeaders(),
-      cache: 'no-store'
-    });
-    const json = await res.json() as { result: string | null };
-    if (!json.result) return [];
-    const val = json.result;
-    const parsed = typeof val === 'string' ? JSON.parse(val) : val;
-    return typeof parsed === 'string' ? JSON.parse(parsed) : parsed;
+    const data = await kv.get<string | TimeEntry[]>(`time_${leadId}`);
+    if (!data) return [];
+    if (typeof data === 'string') return JSON.parse(data);
+    return data;
   } catch { return []; }
 }
 
 async function setTimeEntries(leadId: string, entries: TimeEntry[]): Promise<void> {
-  await fetch(`${kvBase()}/set/time_${leadId}`, {
-    method: 'POST',
-    headers: { ...kvHeaders(), 'Content-Type': 'application/json' },
-    body: JSON.stringify(JSON.stringify(entries)),
-  });
+  await kv.set(`time_${leadId}`, entries);
 }
 
 export async function addTimeEntry(entry: TimeEntry): Promise<void> {

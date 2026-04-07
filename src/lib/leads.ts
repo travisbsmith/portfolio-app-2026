@@ -61,40 +61,27 @@ export interface Lead {
   updatedAt: string;
 }
 
+import { createClient } from '@vercel/kv';
+
 const KV_KEY = 'leads';
 
-function kvHeaders(): Record<string, string> {
-  const token = import.meta.env.KV_REST_API_TOKEN ?? process.env?.KV_REST_API_TOKEN;
-  if (!token) throw new Error('KV_REST_API_TOKEN not set');
-  return { Authorization: `Bearer ${token}` };
-}
-
-function kvBase(): string {
-  const base = import.meta.env.KV_REST_API_URL ?? process.env?.KV_REST_API_URL;
-  if (!base) throw new Error('KV_REST_API_URL not set');
-  return base;
-}
+const url = import.meta.env.KV_REST_API_URL ?? process.env?.KV_REST_API_URL;
+const token = import.meta.env.KV_REST_API_TOKEN ?? process.env?.KV_REST_API_TOKEN;
+const kv = createClient({ url: url as string, token: token as string });
 
 export async function getLeads(): Promise<Lead[]> {
   try {
-    const res = await fetch(`${kvBase()}/get/${KV_KEY}`, { 
-      headers: kvHeaders(),
-      cache: 'no-store' 
-    });
-    const json = await res.json() as { result: string | null };
-    if (!json.result) return [];
-    const val = json.result; if (!val) return []; const parsed = typeof val === "string" ? JSON.parse(val) : val; return typeof parsed === "string" ? JSON.parse(parsed) : parsed;
+    const data = await kv.get<string | Lead[]>(KV_KEY);
+    if (!data) return [];
+    if (typeof data === 'string') return JSON.parse(data);
+    return data;
   } catch {
     return [];
   }
 }
 
 async function setLeads(leads: Lead[]): Promise<void> {
-  await fetch(`${kvBase()}/set/${KV_KEY}`, {
-    method: 'POST',
-    headers: { ...kvHeaders(), 'Content-Type': 'application/json' },
-    body: JSON.stringify(JSON.stringify(leads)),
-  });
+  await kv.set(KV_KEY, leads);
 }
 
 export async function saveLead(lead: Lead): Promise<void> {
