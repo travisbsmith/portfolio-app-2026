@@ -14,8 +14,18 @@ const now = Date.now();
 
 // All leads with a future meeting, sorted ascending
 const upcoming = leads
-  .filter(l => l.nextMeetingISO && new Date(l.nextMeetingISO).getTime() > now)
-  .sort((a, b) => new Date(a.nextMeetingISO!).getTime() - new Date(b.nextMeetingISO!).getTime());
+  .filter(l => {
+    if (l.nextMeetingISO) return new Date(l.nextMeetingISO).getTime() > now;
+    return !!l.nextMeeting;
+  })
+  .sort((a, b) => {
+    const tA = a.nextMeetingISO ? new Date(a.nextMeetingISO).getTime() : 0;
+    const tB = b.nextMeetingISO ? new Date(b.nextMeetingISO).getTime() : 0;
+    if (tA === 0 && tB === 0) return 0;
+    if (tA === 0) return 1;
+    if (tB === 0) return -1;
+    return tA - tB;
+  });
 
 // Group by ISO week (YYYY-Www)
 function isoWeek(dateStr: string): string {
@@ -27,6 +37,7 @@ function isoWeek(dateStr: string): string {
 }
 
 function weekLabel(isoWeekStr: string): string {
+  if (isoWeekStr === 'Manual') return 'Manually Scheduled';
   // Parse YYYY-Www and return "Week of Mon D"
   const [yearStr, wStr] = isoWeekStr.split('-W');
   const year = parseInt(yearStr);
@@ -41,7 +52,7 @@ function weekLabel(isoWeekStr: string): string {
 // Build grouped structure: Map<weekKey, entries[]>
 const grouped = new Map<string, typeof upcoming>();
 for (const lead of upcoming) {
-  const key = isoWeek(lead.nextMeetingISO!);
+  const key = lead.nextMeetingISO ? isoWeek(lead.nextMeetingISO) : 'Manual';
   if (!grouped.has(key)) grouped.set(key, []);
   grouped.get(key)!.push(lead);
 }
@@ -78,9 +89,9 @@ const stageBadgeColor: Record<string, string> = {
             <div class="cal-week__label">{weekLabel(weekKey)}</div>
             <div class="cal-week__rows">
               {entries.map(lead => {
-                const meetingDate = new Date(lead.nextMeetingISO!);
-                const dayStr = meetingDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-                const timeStr = meetingDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZoneName: 'short' });
+                const meetingDate = lead.nextMeetingISO ? new Date(lead.nextMeetingISO) : null;
+                const dayStr = meetingDate ? meetingDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : 'Set manually';
+                const timeStr = meetingDate ? meetingDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }) : (lead.nextMeeting || 'TBD');
                 const stageColor = stageBadgeColor[lead.stage] ?? '#718096';
                 return (
                   <a href={`/dashboard/${lead.id}`} class="cal-row">

@@ -13,6 +13,7 @@ try { navLeads = (await getLeads()).filter(l => l.stage !== 'Archived'); } catch
 
 // Analytics cache — read from Vercel KV (written by /api/sync/analytics cron)
 let analyticsData: any = null;
+let postsData: any = null;
 
 try {
   const kvBase = process.env.KV_REST_API_URL;
