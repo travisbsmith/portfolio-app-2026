@@ -83,7 +83,7 @@ if (toggle && list) {
 
   .sidebar-nav {
     flex: 1;
-    padding: var(--space-5) var(--space-3);
+    padding: var(--space-4) var(--space-3);
     display: flex;
     flex-direction: column;
     gap: var(--space-1);
@@ -147,6 +147,10 @@ if (toggle && list) {
     display: flex;
     flex-direction: column;
     gap: 1px;
+  }
+
+  .sidebar-client-list[hidden] {
+    display: none !important;
   }
 
   .sidebar-client-empty {

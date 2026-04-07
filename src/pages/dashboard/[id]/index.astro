@@ -1265,7 +1265,7 @@ const lastActivityDaysAgo = lastActivity
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: var(--space-4) var(--space-6);
+    padding: var(--space-4) var(--space-5);
     border-bottom: 1px solid var(--color-border);
   }
 
@@ -1280,7 +1280,7 @@ const lastActivityDaysAgo = lastActivity
   }
 
   .card__body {
-    padding: var(--space-6);
+    padding: var(--space-5);
   }
 
   /* ── Call Guide ── */
@@ -1323,7 +1323,7 @@ const lastActivityDaysAgo = lastActivity
   }
 
   .guide-body {
-    padding: var(--space-6);
+    padding: var(--space-5);
     border-top: 1px solid var(--color-border);
     display: flex;
     flex-direction: column;
@@ -3321,17 +3321,32 @@ if (invAddLine) {
   });
 }
 
+function openFollowupPanel() {
+  const firstName = leadName.split(' ')[0];
+  const body = latestOpenInvoiceUrl
+    ? 'Hi ' + firstName + ',\n\nJust a quick check-in — your invoice is still open.\n\nView and pay here: ' + latestOpenInvoiceUrl + '\n\nLet me know if you have any questions.\n\n— Travis\ntravis@fully-operational.com'
+    : 'Hi ' + firstName + ',\n\nJust following up on our conversation — happy to answer any questions or chat more about next steps.\n\nIf you\'d like to book a call: https://cal.com/fullyoperational\n\n— Travis\ntravis@fully-operational.com';
+  const fuBody = document.getElementById('fu-body');
+  if (fuBody && !fuBody.value) fuBody.value = body;
+  
+  const panel = document.getElementById('panel-followup');
+  const mainToggle = document.getElementById('btn-followup');
+  
+  if (panel) {
+    if (panel.hidden) {
+      panel.hidden = false;
+      panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }
+  if (mainToggle) {
+    mainToggle.setAttribute('aria-expanded', 'true');
+  }
+}
+
 const btnFollowup = document.getElementById('btn-followup');
 if (btnFollowup) {
   btnFollowup.addEventListener('click', () => {
-    const firstName = leadName.split(' ')[0];
-    const body = latestOpenInvoiceUrl
-      ? 'Hi ' + firstName + ',\n\nJust a quick check-in — your invoice is still open.\n\nView and pay here: ' + latestOpenInvoiceUrl + '\n\nLet me know if you have any questions.\n\n— Travis\ntravis@fully-operational.com'
-      : 'Hi ' + firstName + ',\n\nJust following up on our conversation — happy to answer any questions or chat more about next steps.\n\nIf you\'d like to book a call: https://cal.com/fullyoperational\n\n— Travis\ntravis@fully-operational.com';
-    const fuBody = document.getElementById('fu-body');
-    if (fuBody) fuBody.value = body;
-    const panel = document.getElementById('panel-followup');
-    if (panel) panel.hidden = !panel.hidden;
+    openFollowupPanel();
   });
 }
 
@@ -3896,14 +3911,7 @@ if (btnCancelCall) {
 const btnFollowupSummary = document.getElementById('btn-followup-summary');
 if (btnFollowupSummary) {
   btnFollowupSummary.addEventListener('click', () => {
-    // Open the follow-up panel in the sidebar
-    const panelFollowup = document.getElementById('panel-followup');
-    const btnFollowupToggle = document.getElementById('btn-followup');
-    if (panelFollowup && btnFollowupToggle) {
-      panelFollowup.hidden = false;
-      btnFollowupToggle.setAttribute('aria-expanded', 'true');
-      panelFollowup.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }
+    openFollowupPanel();
   });
 }
 
@@ -3911,11 +3919,7 @@ if (btnFollowupSummary) {
 const btnNaFollowup = document.getElementById('btn-na-followup');
 if (btnNaFollowup) {
   btnNaFollowup.addEventListener('click', () => {
-    // Scroll to work log and focus the note textarea
-    const workLog = document.getElementById('work-log');
-    if (workLog) workLog.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    switchWorkTab('note');
-    setTimeout(() => { const ta = document.getElementById('activity-text'); if (ta) ta.focus(); }, 300);
+    openFollowupPanel();
   });
 }
 
