@@ -64,13 +64,13 @@ export interface Lead {
 const KV_KEY = 'leads';
 
 function kvHeaders(): Record<string, string> {
-  const token = process.env.KV_REST_API_TOKEN;
+  const token = import.meta.env.KV_REST_API_TOKEN ?? process.env?.KV_REST_API_TOKEN;
   if (!token) throw new Error('KV_REST_API_TOKEN not set');
   return { Authorization: `Bearer ${token}` };
 }
 
 function kvBase(): string {
-  const base = process.env.KV_REST_API_URL;
+  const base = import.meta.env.KV_REST_API_URL ?? process.env?.KV_REST_API_URL;
   if (!base) throw new Error('KV_REST_API_URL not set');
   return base;
 }
