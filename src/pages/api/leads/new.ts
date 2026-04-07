@@ -6,10 +6,21 @@ export const prerender = false;
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type',
+};
+
+// Handle CORS preflight
+export const OPTIONS: APIRoute = async () => {
+  return new Response(null, { status: 204, headers: CORS_HEADERS });
+};
+
 function jsonResponse(payload: Record<string, unknown>, status = 200) {
   return new Response(JSON.stringify(payload), {
     status,
-    headers: { 'Content-Type': 'application/json' },
+    headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
   });
 }
 
@@ -112,8 +123,6 @@ export const POST: APIRoute = async ({ request, url, redirect }) => {
           <tr><td style="padding:6px 12px;color:#666;white-space:nowrap">Store Status</td><td style="padding:6px 12px">${lead.storeStatus || '—'}</td></tr>
           <tr><td style="padding:6px 12px;color:#666;white-space:nowrap">Interested In</td><td style="padding:6px 12px">${lead.serviceInterest || '—'}</td></tr>
           <tr><td style="padding:6px 12px;color:#666;white-space:nowrap">Challenge</td><td style="padding:6px 12px;white-space:pre-wrap">${lead.challenge || '—'}</td></tr>
-          <tr><td style="padding:6px 12px;color:#666;white-space:nowrap">Availability</td><td style="padding:6px 12px">${lead.availability || '—'}</td></tr>
-          <tr><td style="padding:6px 12px;color:#666;white-space:nowrap">Timezone</td><td style="padding:6px 12px">${lead.timezone || '—'}</td></tr>
           <tr><td style="padding:6px 12px;color:#666;white-space:nowrap">Referral</td><td style="padding:6px 12px">${lead.referral || '—'}</td></tr>
         </table>
         <p style="margin-top:24px"><a href="https://app.fully-operational.com/dashboard" style="background:#ff5722;color:white;padding:10px 20px;text-decoration:none;font-family:monospace">View in Dashboard →</a></p>
@@ -126,7 +135,6 @@ export const POST: APIRoute = async ({ request, url, redirect }) => {
         email: lead.email,
         error: emailResult.error,
       });
-
       return wantsJson
         ? jsonResponse({ ok: false, error: 'Lead saved but email delivery failed', id: lead.id }, 502)
         : new Response('Lead saved but email delivery failed', { status: 502 });
@@ -143,7 +151,6 @@ export const POST: APIRoute = async ({ request, url, redirect }) => {
       email: lead.email,
       error: e,
     });
-
     return wantsJson
       ? jsonResponse({ ok: false, error: 'Lead saved but email delivery failed', id: lead.id }, 502)
       : new Response('Lead saved but email delivery failed', { status: 502 });

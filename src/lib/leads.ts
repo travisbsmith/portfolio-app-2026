@@ -13,6 +13,13 @@ export interface Deliverable {
   status: 'pending' | 'in-progress' | 'done';
 }
 
+export interface TodoItem {
+  id: string;
+  text: string;
+  done: boolean;
+  createdAt: string;
+}
+
 export interface Lead {
   id: string;
   name: string;
@@ -41,6 +48,7 @@ export interface Lead {
   proposalSentAt?: string;
   activityLog?: ActivityEntry[];
   deliverables?: Deliverable[];
+  todos?: TodoItem[];
   // Reminder automation
   unsubscribeToken?: string;
   remindersDisabled?: boolean;

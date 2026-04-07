@@ -3,7 +3,8 @@ export const prerender = false;
 
 import BaseLayout from '../../../layouts/BaseLayout.astro';
 import DashboardNav from '../../../components/DashboardNav.astro';
-import { getLeads, type ActivityEntry, type Deliverable } from '../../../lib/leads';
+import { getLeads, type ActivityEntry, type Deliverable, type TodoItem } from '../../../lib/leads';
+import { marked } from 'marked';
 import { isAuthenticated } from '../../../lib/auth';
 import { getTimeEntries } from '../../../lib/time';
 import { matchService, STAGE_CHECKLISTS } from '../../../lib/services';
@@ -71,6 +72,9 @@ const countdownLabel = daysUntilMeeting !== null && daysUntilMeeting > 0
     : hoursUntilMeeting !== null && hoursUntilMeeting <= 0
       ? 'Now or past'
       : 'Scheduled';
+
+// Next Action banner computed values
+const deliverablesInProgress = (lead.deliverables ?? []).filter(d => d.status !== 'done').length;
 
 // Proposal Sent: days since proposal
 const proposalSentAt = lead.proposalSentAt ?? lead.updatedAt;
@@ -202,6 +206,79 @@ const lastActivityDaysAgo = lastActivity
           </>
         )}
       </div>
+
+      <!-- Next Action: always shown, stage-aware CTA -->
+      <section class="card card--next-action">
+        <div class="card__body next-action-body">
+          {lead.stage === 'Lead' && (
+            <>
+              <span class="next-action__text">Reach out to schedule an intro call.</span>
+              <button class="btn-sm next-action-cta" id="btn-na-followup">Send Follow-up</button>
+            </>
+          )}
+          {lead.stage === 'Call Scheduled' && (
+            <>
+              <span class="next-action__text">
+                {lead.nextMeeting ? `Prepare for your call on ${lead.nextMeeting}.` : 'Prepare for your upcoming call.'}
+              </span>
+              <button class="btn-sm next-action-cta" id="btn-na-guide">View Discovery Guide</button>
+            </>
+          )}
+          {isProposal && (
+            <>
+              <span class="next-action__text">
+                {daysSinceProposal === 0 ? 'Proposal sent today.' : `Proposal sent ${daysSinceProposal}d ago — follow up.`}
+              </span>
+              <button class="btn-sm next-action-cta" id="btn-na-followup">Send Follow-up</button>
+            </>
+          )}
+          {isActive && (
+            <>
+              <span class="next-action__text">
+                {deliverablesInProgress > 0
+                  ? `${deliverablesInProgress} deliverable${deliverablesInProgress === 1 ? '' : 's'} in progress · `
+                  : ''}
+                {contractHours
+                  ? `${monthlyHours.toFixed(1)} / ${contractHours}h logged this month.`
+                  : `${monthlyHours.toFixed(1)}h logged this month.`}
+              </span>
+              <button class="btn-sm next-action-cta" id="btn-na-logtime">Log Time</button>
+            </>
+          )}
+          {isClosed && (
+            <span class="next-action__text">Reconnect by {reconnectDate}.</span>
+          )}
+        </div>
+      </section>
+
+      <!-- To-Dos: always shown, all stages -->
+      <section class="card" id="todos-card">
+        <div class="card__header">
+          <h2>To-Dos</h2>
+          <span id="todos-status" class="save-status"></span>
+        </div>
+        <div class="card__body">
+          <form id="todo-form" class="todo-add-form">
+            <div class="todo-add-row">
+              <input type="text" id="todo-input" placeholder="Add a task..." required class="todo-input" />
+              <button type="submit" class="btn-save">Add</button>
+            </div>
+          </form>
+          <div class="todo-list" id="todo-list">
+            {(lead.todos ?? []).length > 0 ? (
+              (lead.todos ?? []).map((item: TodoItem) => (
+                <div class="todo-item" data-item-id={item.id}>
+                  <input type="checkbox" class="todo-checkbox" data-item-id={item.id} checked={item.done} />
+                  <span class:list={['todo-text', { 'todo-text--done': item.done }]}>{item.text}</span>
+                  <button class="todo-delete" data-item-id={item.id} aria-label="Delete">&times;</button>
+                </div>
+              ))
+            ) : (
+              <p class="empty" id="todo-empty">No tasks yet.</p>
+            )}
+          </div>
+        </div>
+      </section>
 
       <!-- Call Scheduled: Meeting countdown (primary card for this stage) -->
       {lead.stage === 'Call Scheduled' && (
@@ -611,12 +688,25 @@ const lastActivityDaysAgo = lastActivity
           <span id="notes-status" class="save-status"></span>
         </div>
         <div class="card__body">
-          <textarea
-            id="notes-textarea"
-            class="notes-textarea"
-            placeholder="Notes from the call — what they said, key problems, budget signals, next steps..."
-            data-lead-id={lead.id}
-          >{lead.internalNotes}</textarea>
+          <div class="md-editor" id="notes-editor">
+            <div class="md-toolbar">
+              <button type="button" class="md-btn md-btn--bold" data-action="bold" title="Bold">B</button>
+              <button type="button" class="md-btn md-btn--italic" data-action="italic" title="Italic">I</button>
+              <button type="button" class="md-btn" data-action="link" title="Link">⌘K</button>
+              <button type="button" class="md-btn" data-action="heading" title="Heading">H2</button>
+              <button type="button" class="md-btn md-btn--mono" data-action="code" title="Inline code">`</button>
+              <button type="button" class="md-btn" data-action="list" title="Bullet list">—</button>
+              <div class="md-toolbar__sep"></div>
+              <button type="button" class="md-preview-toggle" id="notes-preview-toggle">Preview</button>
+            </div>
+            <textarea
+              id="notes-textarea"
+              class="notes-textarea"
+              placeholder="Notes from the call — what they said, key problems, budget signals, next steps..."
+              data-lead-id={lead.id}
+            >{lead.internalNotes}</textarea>
+            <div id="notes-preview" class="md-preview md-content" hidden></div>
+          </div>
         </div>
       </section>
 
@@ -634,7 +724,15 @@ const lastActivityDaysAgo = lastActivity
                 <option value="Call">Call</option>
                 <option value="Email">Email</option>
               </select>
-              <textarea id="activity-text" name="text" rows="2" placeholder="What happened..." required class="activity-textarea"></textarea>
+              <div class="activity-editor">
+                <div class="md-toolbar md-toolbar--compact">
+                  <button type="button" class="md-btn md-btn--bold" data-action="bold" title="Bold">B</button>
+                  <button type="button" class="md-btn md-btn--italic" data-action="italic" title="Italic">I</button>
+                  <button type="button" class="md-btn" data-action="link" title="Link">⌘K</button>
+                  <button type="button" class="md-btn md-btn--mono" data-action="code" title="Code">`</button>
+                </div>
+                <textarea id="activity-text" name="text" rows="3" placeholder="What happened..." required class="activity-textarea"></textarea>
+              </div>
               <button type="submit" class="btn-save activity-submit">Log</button>
             </div>
           </form>
@@ -647,7 +745,7 @@ const lastActivityDaysAgo = lastActivity
                     <span class="activity-entry__date">{new Date(entry.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
                     <button class="activity-entry__delete" data-entry-id={entry.id} aria-label="Delete">&times;</button>
                   </div>
-                  <div class="activity-entry__text">{entry.text}</div>
+                  <div class="activity-entry__text md-content" set:html={marked.parse(entry.text)} />
                 </div>
               ))
             ) : (
@@ -662,9 +760,9 @@ const lastActivityDaysAgo = lastActivity
     <!-- ── Sidebar ── -->
     <aside class="lead-sidebar">
 
-      <!-- Call Scheduled: Next Meeting at the very top — most important context -->
-      {lead.stage === 'Call Scheduled' && (
-        <section class="card card--highlight">
+      <!-- Next Meeting: all non-closed stages -->
+      {!isClosed && (
+        <section class="card">
           <div class="card__header"><h2>Next Meeting</h2></div>
           <div class="card__body">
             <div class="form-row">
@@ -816,23 +914,6 @@ const lastActivityDaysAgo = lastActivity
               </form>
             </div>
           )}
-        </section>
-      )}
-
-      <!-- Next Meeting: Lead + Active (Call Scheduled has its own at top) -->
-      {(lead.stage === 'Lead' || isActive) && (
-        <section class="card">
-          <div class="card__header"><h2>Next Meeting</h2></div>
-          <div class="card__body">
-            <div class="form-row">
-              <label>Date &amp; time</label>
-              <div class="stripe-id-row">
-                <input type="text" id="next-meeting-input" value={lead.nextMeeting ?? ''} placeholder="e.g. Apr 1, 1:30 ET" data-lead-id={lead.id} />
-                <button id="next-meeting-save" class="btn-save">Save</button>
-              </div>
-              <span id="next-meeting-status" class="save-status"></span>
-            </div>
-          </div>
         </section>
       )}
 
@@ -1300,6 +1381,165 @@ const lastActivityDaysAgo = lastActivity
   .notes-textarea:focus {
     outline: none;
     border-color: var(--color-accent);
+  }
+
+  /* ── Markdown editor ── */
+  .md-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .md-toolbar {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding: var(--space-2) var(--space-3);
+    background: var(--color-bg-alt);
+    border: 1px solid var(--color-border);
+    border-bottom: none;
+    border-radius: var(--radius-md) var(--radius-md) 0 0;
+  }
+
+  .md-toolbar--compact {
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  }
+
+  .md-btn {
+    background: none;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    padding: 2px 6px;
+    font-size: var(--text-xs);
+    font-family: var(--font-mono);
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    line-height: 1.4;
+    transition: background 0.1s, border-color 0.1s, color 0.1s;
+  }
+
+  .md-btn:hover {
+    background: var(--color-bg);
+    border-color: var(--color-border);
+    color: var(--color-text);
+  }
+
+  .md-btn--bold { font-weight: 700; }
+  .md-btn--italic { font-style: italic; }
+  .md-btn--mono { font-family: var(--font-mono); }
+
+  .md-toolbar__sep {
+    flex: 1;
+  }
+
+  .md-preview-toggle {
+    background: none;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    padding: 2px 10px;
+    font-size: var(--text-xs);
+    font-family: var(--font-mono);
+    color: var(--color-text-tertiary);
+    cursor: pointer;
+    transition: color 0.1s, border-color 0.1s;
+  }
+
+  .md-preview-toggle:hover {
+    color: var(--color-text);
+    border-color: var(--color-text-tertiary);
+  }
+
+  .md-editor .notes-textarea {
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+  }
+
+  .md-preview {
+    min-height: 240px;
+    padding: var(--space-4);
+    border: 1px solid var(--color-border);
+    border-radius: 0 0 var(--radius-md) var(--radius-md);
+    background: var(--color-bg);
+    overflow-y: auto;
+  }
+
+  /* ── Markdown rendered content ── */
+  .md-content {
+    font-size: var(--text-sm);
+    line-height: 1.65;
+    color: var(--color-text);
+  }
+
+  .md-content p { margin: 0 0 var(--space-3); }
+  .md-content p:last-child { margin-bottom: 0; }
+  .md-content h1, .md-content h2, .md-content h3 {
+    font-weight: 600;
+    margin: var(--space-4) 0 var(--space-2);
+    color: var(--color-text);
+  }
+  .md-content h1 { font-size: var(--text-base); }
+  .md-content h2 { font-size: var(--text-sm); }
+  .md-content h3 { font-size: var(--text-sm); color: var(--color-text-secondary); }
+  .md-content h1:first-child, .md-content h2:first-child, .md-content h3:first-child { margin-top: 0; }
+  .md-content ul, .md-content ol {
+    margin: 0 0 var(--space-3);
+    padding-left: var(--space-6);
+  }
+  .md-content li { margin-bottom: var(--space-1); }
+  .md-content a {
+    color: var(--color-accent);
+    text-decoration: underline;
+  }
+  .md-content a:hover { opacity: 0.8; }
+  .md-content code {
+    font-family: var(--font-mono);
+    font-size: 0.85em;
+    background: var(--color-bg-alt);
+    padding: 1px 4px;
+    border-radius: 3px;
+    color: var(--color-text);
+  }
+  .md-content pre {
+    background: var(--color-bg-alt);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    padding: var(--space-3) var(--space-4);
+    overflow-x: auto;
+    margin: 0 0 var(--space-3);
+  }
+  .md-content pre code {
+    background: none;
+    padding: 0;
+  }
+  .md-content blockquote {
+    border-left: 3px solid var(--color-border);
+    margin: 0 0 var(--space-3);
+    padding: var(--space-2) var(--space-4);
+    color: var(--color-text-secondary);
+  }
+  .md-content strong { font-weight: 600; }
+  .md-content em { font-style: italic; }
+  .md-content hr {
+    border: none;
+    border-top: 1px solid var(--color-border);
+    margin: var(--space-4) 0;
+  }
+
+  /* ── Activity editor layout ── */
+  .activity-editor {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+  }
+
+  .activity-editor .md-toolbar {
+    border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  }
+
+  .activity-editor .activity-textarea {
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
   }
 
   /* ── Intake ── */
@@ -2116,6 +2356,109 @@ const lastActivityDaysAgo = lastActivity
     color: var(--color-accent);
   }
 
+  /* ── Next Action banner ── */
+  .card--next-action {
+    border-color: var(--color-accent);
+  }
+
+  .next-action-body {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-4);
+    flex-wrap: wrap;
+    padding: var(--space-4) var(--space-6);
+  }
+
+  .next-action__text {
+    font-size: var(--text-sm);
+    color: var(--color-text-secondary);
+    flex: 1;
+  }
+
+  .next-action-cta {
+    flex-shrink: 0;
+  }
+
+  /* ── To-Dos ── */
+  .todo-add-form {
+    margin-bottom: var(--space-4);
+  }
+
+  .todo-add-row {
+    display: flex;
+    gap: var(--space-3);
+  }
+
+  .todo-input {
+    flex: 1;
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    font-size: var(--text-sm);
+    background: var(--color-bg);
+    color: var(--color-text);
+  }
+
+  .todo-input:focus {
+    outline: none;
+    border-color: var(--color-accent);
+  }
+
+  .todo-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+
+  .todo-item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-md);
+    transition: background 0.1s;
+  }
+
+  .todo-item:hover {
+    background: var(--color-bg-alt);
+  }
+
+  .todo-checkbox {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+    cursor: pointer;
+    accent-color: var(--color-accent);
+  }
+
+  .todo-text {
+    flex: 1;
+    font-size: var(--text-sm);
+    color: var(--color-text);
+    word-break: break-word;
+  }
+
+  .todo-text--done {
+    text-decoration: line-through;
+    color: var(--color-text-tertiary);
+  }
+
+  .todo-delete {
+    background: none;
+    border: none;
+    color: var(--color-text-tertiary);
+    font-size: var(--text-base);
+    cursor: pointer;
+    padding: 0 var(--space-1);
+    opacity: 0;
+    transition: opacity 0.15s, color 0.15s;
+    line-height: 1;
+  }
+
+  .todo-item:hover .todo-delete { opacity: 1; }
+  .todo-delete:hover { color: #e53e3e; }
+
   /* ── Activity Log ── */
   .activity-form {
     margin-bottom: var(--space-5);
@@ -2138,7 +2481,7 @@ const lastActivityDaysAgo = lastActivity
     font-size: var(--text-xs);
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    height: 100%;
+    align-self: start;
   }
 
   .activity-textarea {
@@ -2523,6 +2866,7 @@ const lastActivityDaysAgo = lastActivity
   }
 </style>
 
+<script is:inline src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js"></script>
 <script define:vars={{
   leadId: lead.id,
   leadEmail: lead.email,
@@ -2534,6 +2878,7 @@ const lastActivityDaysAgo = lastActivity
   totalHoursAll: totalHours,
   initialActivityLog: lead.activityLog ?? [],
   initialDeliverables: lead.deliverables ?? [],
+  initialTodos: lead.todos ?? [],
   isActive,
   showLiveCountdown,
   meetingIso: lead.nextMeetingISO ?? '',
@@ -2561,6 +2906,107 @@ async function patchLead(patch, statusEl) {
     statusEl.className = 'save-status error';
   }
 }
+
+// ── Markdown toolbar helper ──
+function setupToolbar(toolbar, textarea) {
+  if (!toolbar || !textarea) return;
+  toolbar.querySelectorAll('.md-btn[data-action]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      const action = btn.dataset.action;
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const sel = textarea.value.slice(start, end);
+      const before = textarea.value.slice(0, start);
+      const after = textarea.value.slice(end);
+      let replacement = '';
+      let cursorOffset = 0;
+
+      if (action === 'bold') {
+        replacement = sel ? `**${sel}**` : '****';
+        cursorOffset = sel ? replacement.length : 2;
+      } else if (action === 'italic') {
+        replacement = sel ? `_${sel}_` : '__';
+        cursorOffset = sel ? replacement.length : 1;
+      } else if (action === 'link') {
+        const url = prompt('URL:') || 'https://';
+        replacement = sel ? `[${sel}](${url})` : `[](${url})`;
+        cursorOffset = sel ? replacement.length : 1;
+      } else if (action === 'code') {
+        replacement = sel ? `\`${sel}\`` : '``';
+        cursorOffset = sel ? replacement.length : 1;
+      } else if (action === 'heading') {
+        const lineStart = before.lastIndexOf('\n') + 1;
+        const lineContent = textarea.value.slice(lineStart, end || textarea.value.length);
+        if (lineContent.startsWith('## ')) {
+          textarea.value = textarea.value.slice(0, lineStart) + lineContent.slice(3) + after;
+          textarea.setSelectionRange(start - 3, end - 3);
+        } else {
+          textarea.value = textarea.value.slice(0, lineStart) + '## ' + lineContent.replace(/^#+\s*/, '') + after;
+          textarea.setSelectionRange(start + 3, end + 3);
+        }
+        textarea.dispatchEvent(new Event('input'));
+        textarea.focus();
+        return;
+      } else if (action === 'list') {
+        const lineStart = before.lastIndexOf('\n') + 1;
+        const lineContent = textarea.value.slice(lineStart);
+        if (lineContent.startsWith('- ')) {
+          textarea.value = textarea.value.slice(0, lineStart) + lineContent.slice(2);
+          textarea.setSelectionRange(start - 2, end - 2);
+        } else {
+          textarea.value = textarea.value.slice(0, lineStart) + '- ' + lineContent;
+          textarea.setSelectionRange(start + 2, end + 2);
+        }
+        textarea.dispatchEvent(new Event('input'));
+        textarea.focus();
+        return;
+      }
+
+      textarea.value = before + replacement + after;
+      const newCursor = start + cursorOffset;
+      textarea.setSelectionRange(newCursor, newCursor);
+      textarea.dispatchEvent(new Event('input'));
+      textarea.focus();
+    });
+  });
+}
+
+// Set up notes toolbar
+setupToolbar(
+  document.querySelector('#notes-editor .md-toolbar'),
+  document.getElementById('notes-textarea')
+);
+
+// Notes: preview toggle
+const notesPreviewToggle = document.getElementById('notes-preview-toggle');
+const notesPreview = document.getElementById('notes-preview');
+const notesEditorTextarea = document.getElementById('notes-textarea');
+let notesShowingPreview = false;
+
+if (notesPreviewToggle && notesPreview && notesEditorTextarea) {
+  notesPreviewToggle.addEventListener('click', () => {
+    notesShowingPreview = !notesShowingPreview;
+    if (notesShowingPreview) {
+      notesPreview.innerHTML = typeof marked !== 'undefined'
+        ? marked.parse(notesEditorTextarea.value || '*No notes yet.*')
+        : notesEditorTextarea.value;
+      notesPreview.hidden = false;
+      notesEditorTextarea.hidden = true;
+      notesPreviewToggle.textContent = 'Edit';
+    } else {
+      notesPreview.hidden = true;
+      notesEditorTextarea.hidden = false;
+      notesPreviewToggle.textContent = 'Preview';
+    }
+  });
+}
+
+// Set up activity toolbar
+setupToolbar(
+  document.querySelector('#activity-form .md-toolbar'),
+  document.getElementById('activity-text')
+);
 
 // ── Intake Form toggle (collapsed reference in non-Lead stages) ──
 const intakeToggle = document.getElementById('intake-toggle');
@@ -3034,7 +3480,7 @@ function renderActivityEntry(entry) {
       '<span class="activity-entry__date">' + dateStr + '</span>' +
       '<button class="activity-entry__delete" data-entry-id="' + entry.id + '" aria-label="Delete">&times;</button>' +
     '</div>' +
-    '<div class="activity-entry__text">' + entry.text.replace(/&/g,'&amp;').replace(/</g,'&lt;') + '</div>';
+    '<div class="activity-entry__text md-content">' + (typeof marked !== 'undefined' ? marked.parse(entry.text) : entry.text.replace(/&/g,'&amp;').replace(/</g,'&lt;')) + '</div>';
   div.querySelector('.activity-entry__delete').addEventListener('click', () => deleteActivityEntry(entry.id));
   return div;
 }
@@ -3287,6 +3733,130 @@ if (btnFollowupSummary) {
       btnFollowupToggle.setAttribute('aria-expanded', 'true');
       panelFollowup.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
+  });
+}
+
+// ── Next Action CTAs ──
+const btnNaFollowup = document.getElementById('btn-na-followup');
+if (btnNaFollowup) {
+  btnNaFollowup.addEventListener('click', () => {
+    const panelFollowup = document.getElementById('panel-followup');
+    const btnFollowupToggle = document.getElementById('btn-followup');
+    if (panelFollowup && btnFollowupToggle) {
+      panelFollowup.hidden = false;
+      btnFollowupToggle.setAttribute('aria-expanded', 'true');
+      panelFollowup.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  });
+}
+
+const btnNaGuide = document.getElementById('btn-na-guide');
+if (btnNaGuide) {
+  btnNaGuide.addEventListener('click', () => {
+    const guideToggle = document.getElementById('guide-toggle');
+    const guideBody = document.getElementById('guide-body');
+    const guideCard = document.getElementById('call-guide-card');
+    if (guideToggle && guideBody) {
+      guideBody.hidden = false;
+      guideToggle.setAttribute('aria-expanded', 'true');
+    }
+    if (guideCard) guideCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+}
+
+const btnNaLogtime = document.getElementById('btn-na-logtime');
+if (btnNaLogtime) {
+  btnNaLogtime.addEventListener('click', () => {
+    const timeCard = document.getElementById('time-card');
+    if (timeCard) timeCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setTimeout(() => {
+      const timeSubmit = document.getElementById('time-submit');
+      if (timeSubmit) timeSubmit.focus();
+    }, 400);
+  });
+}
+
+// ── To-Do list ──
+{
+  let todos = initialTodos.slice();
+  const todosStatus = document.getElementById('todos-status');
+
+  function showTodosStatus(msg, cls) {
+    if (!todosStatus) return;
+    todosStatus.textContent = msg;
+    todosStatus.className = 'save-status ' + cls;
+    if (cls === 'saved') setTimeout(() => { todosStatus.textContent = ''; }, 2000);
+  }
+
+  async function saveTodos() {
+    showTodosStatus('Saving...', 'saving');
+    try {
+      const res = await fetch('/api/leads/' + leadId, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ todos }),
+      });
+      if (res.ok) {
+        showTodosStatus('Saved ✓', 'saved');
+      } else {
+        showTodosStatus('Error', 'error');
+      }
+    } catch {
+      showTodosStatus('Error', 'error');
+    }
+  }
+
+  function renderTodoItem(item) {
+    const div = document.createElement('div');
+    div.className = 'todo-item';
+    div.dataset.itemId = item.id;
+    div.innerHTML =
+      '<input type="checkbox" class="todo-checkbox" data-item-id="' + item.id + '"' + (item.done ? ' checked' : '') + ' />' +
+      '<span class="todo-text' + (item.done ? ' todo-text--done' : '') + '">' + item.text.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</span>' +
+      '<button class="todo-delete" data-item-id="' + item.id + '" aria-label="Delete">&times;</button>';
+    attachTodoHandlers(div);
+    return div;
+  }
+
+  function attachTodoHandlers(container) {
+    container.querySelector('.todo-checkbox').addEventListener('change', async (e) => {
+      const itemId = e.target.dataset.itemId;
+      const item = todos.find(t => t.id === itemId);
+      if (!item) return;
+      item.done = e.target.checked;
+      const textEl = container.querySelector('.todo-text');
+      if (textEl) textEl.classList.toggle('todo-text--done', item.done);
+      await saveTodos();
+    });
+
+    container.querySelector('.todo-delete').addEventListener('click', async () => {
+      const itemId = container.dataset.itemId;
+      todos = todos.filter(t => t.id !== itemId);
+      container.remove();
+      const list = document.getElementById('todo-list');
+      if (list && todos.length === 0) {
+        list.innerHTML = '<p class="empty" id="todo-empty">No tasks yet.</p>';
+      }
+      await saveTodos();
+    });
+  }
+
+  document.querySelectorAll('.todo-item').forEach(attachTodoHandlers);
+
+  const todoForm = document.getElementById('todo-form');
+  todoForm && todoForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const input = document.getElementById('todo-input');
+    const text = input.value.trim();
+    if (!text) return;
+    const item = { id: crypto.randomUUID(), text, done: false, createdAt: new Date().toISOString() };
+    todos.push(item);
+    input.value = '';
+    const list = document.getElementById('todo-list');
+    const empty = document.getElementById('todo-empty');
+    if (empty) empty.remove();
+    if (list) list.appendChild(renderTodoItem(item));
+    await saveTodos();
   });
 }
 </script>
