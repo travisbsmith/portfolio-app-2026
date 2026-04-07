@@ -115,9 +115,11 @@ const lastActivityDaysAgo = lastActivity
 ---
 
 <BaseLayout title={`${lead.name} — Dashboard`} description="Lead detail">
-<div class="lead-page">
+<div class="lead-page app-layout">
 
-  <DashboardNav active="clients" />
+  <DashboardNav active="clients" leads={leads.filter(l => l.stage !== 'Archived')} currentLeadId={lead.id} />
+
+  <div class="app-main">
 
   <!-- ── Header ── -->
   <header class="lead-header">
@@ -630,7 +632,7 @@ const lastActivityDaysAgo = lastActivity
           <form id="activity-form">
             <textarea id="activity-text" rows="4" placeholder="What happened, decisions made, notes from a call..." class="work-textarea"></textarea>
             <div class="work-panel-footer">
-              <button type="submit" class="btn-save">Log</button>
+              <button type="submit" class="btn-save">Save</button>
             </div>
           </form>
         </div>
@@ -1124,6 +1126,7 @@ const lastActivityDaysAgo = lastActivity
       )}
 
     </aside>
+  </div>
   </div>
 </div>
 </BaseLayout>
@@ -3672,23 +3675,37 @@ function prependToFeed(el) {
 }
 
 const activityForm = document.getElementById('activity-form');
+const activitySubmitBtn = activityForm && activityForm.querySelector('button[type="submit"]');
 activityForm && activityForm.addEventListener('submit', async (e) => {
   e.preventDefault();
-  const type = document.getElementById('activity-type').value;
-  const text = document.getElementById('activity-text').value.trim();
+  const typeEl = document.getElementById('activity-type');
+  const textEl = document.getElementById('activity-text');
+  const type = typeEl ? typeEl.value : 'Note';
+  const text = textEl ? textEl.value.trim() : '';
   if (!text) return;
+  if (activitySubmitBtn) activitySubmitBtn.disabled = true;
   if (activityStatus) { activityStatus.textContent = 'Saving...'; activityStatus.className = 'save-status saving'; }
-  const res = await fetch('/api/activity/' + leadId, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ type, text }),
-  });
-  if (!res.ok) { if (activityStatus) { activityStatus.textContent = 'Error'; activityStatus.className = 'save-status error'; } return; }
-  const entry = await res.json();
-  activityLog.unshift(entry);
-  if (activityStatus) { activityStatus.textContent = 'Saved ✓'; activityStatus.className = 'save-status saved'; setTimeout(() => { activityStatus.textContent = ''; }, 2000); }
-  prependToFeed(renderActivityEntry(entry));
-  document.getElementById('activity-text').value = '';
+  try {
+    const res = await fetch('/api/activity/' + leadId, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type, text }),
+    });
+    if (!res.ok) {
+      const msg = await res.text().catch(() => 'Error');
+      if (activityStatus) { activityStatus.textContent = 'Error: ' + res.status; activityStatus.className = 'save-status error'; }
+      return;
+    }
+    const entry = await res.json();
+    activityLog.unshift(entry);
+    if (activityStatus) { activityStatus.textContent = 'Saved ✓'; activityStatus.className = 'save-status saved'; setTimeout(() => { activityStatus.textContent = ''; }, 2000); }
+    prependToFeed(renderActivityEntry(entry));
+    if (textEl) textEl.value = '';
+  } catch (err) {
+    if (activityStatus) { activityStatus.textContent = 'Network error'; activityStatus.className = 'save-status error'; }
+  } finally {
+    if (activitySubmitBtn) activitySubmitBtn.disabled = false;
+  }
 });
 
 // ── Deliverables ──

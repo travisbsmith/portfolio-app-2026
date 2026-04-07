@@ -242,3 +242,15 @@ img {
     scroll-behavior: auto !important;
   }
 }
+
+/* ── App shell (sidebar layout) ── */
+.app-layout {
+  display: flex;
+  min-height: 100vh;
+  align-items: stretch;
+}
+.app-main {
+  flex: 1;
+  min-width: 0;
+  overflow-x: hidden;
+}

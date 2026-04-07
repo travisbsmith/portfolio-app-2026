@@ -113,9 +113,10 @@ const defaultBody = template?.body ?? `<h2>[Service Name] — [Price]</h2>
 <link rel="stylesheet" href="https://unpkg.com/trix@2.1.1/dist/trix.css" />
 <script src="https://unpkg.com/trix@2.1.1/dist/trix.umd.min.js" is:inline></script>
 
-<div class="proposal-page">
-  <DashboardNav active="clients" />
+<div class="proposal-page app-layout">
+  <DashboardNav active="clients" leads={leads.filter(l => l.stage !== 'Archived')} currentLeadId={lead.id} />
 
+  <div class="app-main">
   <div class="proposal-header">
     <div class="container">
       <div class="proposal-header__inner">
@@ -230,6 +231,7 @@ const defaultBody = template?.body ?? `<h2>[Service Name] — [Price]</h2>
 
       </aside>
     </div>
+  </div>
   </div>
 </div>
 </BaseLayout>

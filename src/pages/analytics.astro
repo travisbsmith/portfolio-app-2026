@@ -5,7 +5,11 @@ import BaseLayout from '../layouts/BaseLayout.astro';
 import DashboardNav from '../components/DashboardNav.astro';
 
 import { isAuthenticated } from '../lib/auth';
+import { getLeads, type Lead } from '../lib/leads';
 if (!isAuthenticated(Astro.cookies)) return Astro.redirect('/dashboard');
+
+let navLeads: Lead[] = [];
+try { navLeads = (await getLeads()).filter(l => l.stage !== 'Archived'); } catch { /* ignore */ }
 
 // Analytics cache — read from Vercel KV (written by /api/sync/analytics cron)
 let analyticsData: any = null;
@@ -26,10 +30,11 @@ try {
 ---
 
 <BaseLayout title="Analytics — Dashboard" description="Site analytics">
-<div class="analytics-page">
+<div class="analytics-page app-layout">
 
-  <DashboardNav active="analytics" />
+  <DashboardNav active="analytics" leads={navLeads} />
 
+  <div class="app-main">
   <main class="analytics-main">
     <div class="container">
 
@@ -210,6 +215,7 @@ try {
 
     </div>
   </main>
+  </div>
 </div>
 </BaseLayout>
 

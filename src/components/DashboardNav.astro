@@ -1,111 +1,229 @@
 ---
+import type { Lead } from '../lib/leads';
+
 export interface Props {
   active: 'clients' | 'analytics' | 'calendar';
+  leads?: Lead[];
+  currentLeadId?: string;
 }
-const { active } = Astro.props;
+const { active, leads = [], currentLeadId } = Astro.props;
 ---
 
-<nav class="dash-nav">
-  <div class="container">
-    <div class="dash-nav__inner">
-      <div class="dash-nav__left">
-        <a href="https://fully-operational.com" class="dash-nav__site-link">&larr; Back to site</a>
-        <span class="dash-nav__divider">|</span>
-        <div class="dash-nav__links">
-          <a href="/dashboard" class:list={['dash-nav__link', { 'dash-nav__link--active': active === 'clients' }]}>Clients</a>
-          <a href="/analytics" class:list={['dash-nav__link', { 'dash-nav__link--active': active === 'analytics' }]}>Analytics</a>
-          <a href="/calendar" class:list={['dash-nav__link', { 'dash-nav__link--active': active === 'calendar' }]}>Calendar</a>
-        </div>
+<aside class="sidebar">
+  <nav class="sidebar-nav">
+
+    <!-- Clients -->
+    <div class="sidebar-section">
+      <div class="sidebar-row">
+        <a
+          href="/dashboard"
+          class:list={['sidebar-link', { 'sidebar-link--active': active === 'clients' && !currentLeadId }]}
+        >Clients</a>
+        <button class="sidebar-expand-btn" id="sidebar-clients-toggle" aria-expanded="true" aria-label="Toggle client list" title="Toggle client list">▾</button>
       </div>
-      <form method="POST" action="/dashboard" style="display:inline">
-        <input type="hidden" name="_action" value="logout" />
-        <button type="submit" class="dash-nav__logout">Logout</button>
-      </form>
+      <div class="sidebar-client-list" id="sidebar-client-list">
+        {leads.length === 0 ? (
+          <span class="sidebar-client-empty">No active clients</span>
+        ) : leads.map(lead => (
+          <a
+            href={`/dashboard/${lead.id}`}
+            class:list={['sidebar-client-link', { 'sidebar-client-link--active': lead.id === currentLeadId }]}
+          >
+            {lead.name}
+          </a>
+        ))}
+      </div>
     </div>
+
+    <!-- Analytics -->
+    <a href="/analytics" class:list={['sidebar-link', { 'sidebar-link--active': active === 'analytics' }]}>Analytics</a>
+
+    <!-- Calendar -->
+    <a href="/calendar" class:list={['sidebar-link', { 'sidebar-link--active': active === 'calendar' }]}>Calendar</a>
+
+  </nav>
+
+  <div class="sidebar-footer">
+    <a href="https://fully-operational.com" class="sidebar-footer-link">← Back to site</a>
+    <form method="POST" action="/dashboard" style="margin:0">
+      <input type="hidden" name="_action" value="logout" />
+      <button type="submit" class="sidebar-footer-link sidebar-logout">Logout</button>
+    </form>
   </div>
-</nav>
+</aside>
+
+<script>
+const toggle = document.getElementById('sidebar-clients-toggle');
+const list = document.getElementById('sidebar-client-list');
+if (toggle && list) {
+  toggle.addEventListener('click', () => {
+    const expanded = toggle.getAttribute('aria-expanded') === 'true';
+    toggle.setAttribute('aria-expanded', String(!expanded));
+    toggle.textContent = !expanded ? '▾' : '▸';
+    list.hidden = expanded;
+  });
+}
+</script>
 
 <style>
-  .dash-nav {
-    background: var(--color-bg);
-    border-bottom: 1px solid var(--color-border);
+  .sidebar {
+    width: 200px;
+    min-width: 200px;
+    flex-shrink: 0;
+    height: 100vh;
     position: sticky;
     top: 0;
+    background: var(--color-bg);
+    border-right: 1px solid var(--color-border);
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
     z-index: 100;
   }
 
-  .dash-nav__inner {
+  .sidebar-nav {
+    flex: 1;
+    padding: var(--space-5) var(--space-3);
     display: flex;
-    justify-content: space-between;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+
+  .sidebar-section {
+    margin-bottom: var(--space-3);
+  }
+
+  .sidebar-row {
+    display: flex;
     align-items: center;
-    height: 48px;
-    gap: var(--space-6);
   }
 
-  .dash-nav__left {
-    display: flex;
-    align-items: center;
-    gap: var(--space-4);
-  }
-
-  .dash-nav__site-link {
-    font-family: var(--font-mono);
-    font-size: var(--text-xs);
-    color: var(--color-text-tertiary);
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    white-space: nowrap;
-    transition: color 0.15s;
-  }
-
-  .dash-nav__site-link:hover { color: var(--color-accent); }
-
-  .dash-nav__divider {
-    color: var(--color-border-strong);
-    font-size: var(--text-xs);
-  }
-
-  .dash-nav__links {
-    display: flex;
-    gap: 2px;
-  }
-
-  .dash-nav__link {
-    font-family: var(--font-mono);
-    font-size: var(--text-xs);
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    padding: var(--space-1) var(--space-3);
+  .sidebar-link {
+    flex: 1;
+    display: block;
+    padding: var(--space-2) var(--space-3);
     border-radius: var(--radius-md);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
     color: var(--color-text-tertiary);
-    transition: all 0.15s;
     text-decoration: none;
+    transition: all 0.15s;
   }
 
-  .dash-nav__link:hover { color: var(--color-text); background: var(--color-bg-alt); }
+  .sidebar-link:hover {
+    color: var(--color-text);
+    background: var(--color-bg-alt);
+  }
 
-  .dash-nav__link--active {
+  .sidebar-link--active {
     color: var(--color-text);
     background: var(--color-bg-alt);
     font-weight: 600;
   }
 
-  .dash-nav__logout {
+  .sidebar-expand-btn {
+    flex-shrink: 0;
+    padding: var(--space-1) var(--space-2);
+    background: none;
+    border: none;
+    color: var(--color-text-tertiary);
+    cursor: pointer;
+    font-size: var(--text-xs);
+    border-radius: var(--radius-sm);
+    line-height: 1;
+    transition: all 0.15s;
+  }
+
+  .sidebar-expand-btn:hover {
+    background: var(--color-bg-alt);
+    color: var(--color-text);
+  }
+
+  .sidebar-client-list {
+    margin-top: var(--space-1);
+    padding-left: var(--space-2);
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+
+  .sidebar-client-empty {
+    display: block;
+    padding: var(--space-1) var(--space-3);
+    font-size: var(--text-xs);
+    color: var(--color-text-tertiary);
+    font-style: italic;
+  }
+
+  .sidebar-client-link {
+    display: block;
+    padding: var(--space-1) var(--space-3);
+    font-size: var(--text-sm);
+    color: var(--color-text-secondary);
+    text-decoration: none;
+    border-radius: var(--radius-sm);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition: all 0.15s;
+  }
+
+  .sidebar-client-link:hover {
+    background: var(--color-bg-alt);
+    color: var(--color-text);
+  }
+
+  .sidebar-client-link--active {
+    background: var(--color-bg-alt);
+    color: var(--color-text);
+    font-weight: 500;
+  }
+
+  .sidebar-footer {
+    padding: var(--space-4) var(--space-3);
+    border-top: 1px solid var(--color-border);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+
+  .sidebar-footer-link {
+    display: block;
     font-family: var(--font-mono);
     font-size: var(--text-xs);
     text-transform: uppercase;
     letter-spacing: 0.06em;
-    padding: var(--space-1) var(--space-3);
-    border-radius: var(--radius-md);
-    background: none;
-    border: 1px solid var(--color-border);
     color: var(--color-text-tertiary);
-    cursor: pointer;
-    transition: all 0.15s;
+    text-decoration: none;
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-sm);
+    transition: color 0.15s;
   }
 
-  .dash-nav__logout:hover {
-    border-color: var(--color-accent);
+  .sidebar-footer-link:hover {
+    color: var(--color-accent);
+  }
+
+  .sidebar-logout {
+    display: block;
+    width: 100%;
+    text-align: left;
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--color-text-tertiary);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-sm);
+    transition: color 0.15s;
+  }
+
+  .sidebar-logout:hover {
     color: var(--color-accent);
   }
 </style>

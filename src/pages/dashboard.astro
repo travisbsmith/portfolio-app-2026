@@ -190,9 +190,10 @@ if (isAuthenticated) {
     </div>
   ) : (
     <!-- Authenticated Dashboard -->
-    <div class="dashboard">
-      <DashboardNav active="clients" />
+    <div class="dashboard app-layout">
+      <DashboardNav active="clients" leads={activeLeads} />
 
+      <div class="app-main">
       <main class="dashboard-main">
         <div class="container">
 
@@ -392,6 +393,7 @@ if (isAuthenticated) {
 
         </div>
       </main>
+      </div>
     </div>
   )}
 

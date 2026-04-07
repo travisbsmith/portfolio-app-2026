@@ -57,9 +57,10 @@ const stageBadgeColor: Record<string, string> = {
 ---
 
 <BaseLayout title="Calendar — Dashboard" description="Upcoming client meetings">
-<DashboardNav active="calendar" />
+<div class="cal-page app-layout">
+  <DashboardNav active="calendar" leads={leads.filter(l => l.stage !== 'Archived')} />
 
-<div class="cal-page">
+  <div class="app-main">
   <div class="container">
     <div class="cal-header">
       <h1 class="cal-title">Upcoming Meetings</h1>
@@ -111,6 +112,8 @@ const stageBadgeColor: Record<string, string> = {
         ))}
       </div>
     )}
+  </div>
+  </div>
   </div>
 </div>
 </BaseLayout>
