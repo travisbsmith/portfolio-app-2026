@@ -77,7 +77,10 @@ function kvBase(): string {
 
 export async function getLeads(): Promise<Lead[]> {
   try {
-    const res = await fetch(`${kvBase()}/get/${KV_KEY}`, { headers: kvHeaders() });
+    const res = await fetch(`${kvBase()}/get/${KV_KEY}`, { 
+      headers: kvHeaders(),
+      cache: 'no-store' 
+    });
     const json = await res.json() as { result: string | null };
     if (!json.result) return [];
     const val = json.result; if (!val) return []; const parsed = typeof val === "string" ? JSON.parse(val) : val; return typeof parsed === "string" ? JSON.parse(parsed) : parsed;

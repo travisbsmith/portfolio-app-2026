@@ -21,7 +21,10 @@ function kvBase(): string {
 
 export async function getTimeEntries(leadId: string): Promise<TimeEntry[]> {
   try {
-    const res = await fetch(`${kvBase()}/get/time_${leadId}`, { headers: kvHeaders() });
+    const res = await fetch(`${kvBase()}/get/time_${leadId}`, { 
+      headers: kvHeaders(),
+      cache: 'no-store'
+    });
     const json = await res.json() as { result: string | null };
     if (!json.result) return [];
     const val = json.result;
