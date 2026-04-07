@@ -6,7 +6,7 @@ import DashboardNav from '../../../components/DashboardNav.astro';
 import { getLeads, type ActivityEntry, type Deliverable, type TodoItem } from '../../../lib/leads';
 import { marked } from 'marked';
 import { isAuthenticated } from '../../../lib/auth';
-import { getTimeEntries } from '../../../lib/time';
+import { getTimeEntries, type TimeEntry } from '../../../lib/time';
 import { matchService, STAGE_CHECKLISTS } from '../../../lib/services';
 import Stripe from 'stripe';
 
@@ -75,6 +75,16 @@ const countdownLabel = daysUntilMeeting !== null && daysUntilMeeting > 0
 
 // Next Action banner computed values
 const deliverablesInProgress = (lead.deliverables ?? []).filter(d => d.status !== 'done').length;
+
+// Unified work feed (activity log + time entries merged by date, newest first)
+type FeedItem =
+  | { kind: 'activity'; data: ActivityEntry; sortKey: string }
+  | { kind: 'time'; data: TimeEntry; sortKey: string };
+
+const feedItems: FeedItem[] = [
+  ...(lead.activityLog ?? []).map(e => ({ kind: 'activity' as const, data: e, sortKey: e.createdAt })),
+  ...timeEntries.map(e => ({ kind: 'time' as const, data: e, sortKey: e.date + 'T23:59:59Z' })),
+].sort((a, b) => b.sortKey.localeCompare(a.sortKey));
 
 // Proposal Sent: days since proposal
 const proposalSentAt = lead.proposalSentAt ?? lead.updatedAt;
@@ -349,101 +359,6 @@ const lastActivityDaysAgo = lastActivity
         </section>
       )}
 
-      <!-- Active: Time Tracking first -->
-      {isActive && (
-        <section class="card" id="time-card">
-          <div class="card__header">
-            <h2>Time</h2>
-            <div class="time-header-right">
-              <span class="time-month-total" id="time-month-label">
-                {contractHours
-                  ? `${monthlyHours.toFixed(1)} / ${contractHours} hrs this month`
-                  : `${monthlyHours.toFixed(1)} hrs this month`}{totalHours > monthlyHours ? ` · ${totalHours.toFixed(1)} total` : ''}
-              </span>
-            </div>
-          </div>
-          <div class="card__body">
-            <form id="time-form" class="time-log-form">
-              <div class="time-form-row">
-                <div class="form-row">
-                  <label for="time-date">Date</label>
-                  <input type="date" id="time-date" name="date" required value={thisMonthPrefix + '-' + String(now.getDate()).padStart(2, '0')} />
-                </div>
-                <div class="form-row">
-                  <label for="time-hours">Hours</label>
-                  <select id="time-hours" name="hours">
-                    {[
-                      [0.25,'0.25 hrs'],[0.5,'0.5 hrs'],[0.75,'0.75 hrs'],
-                      [1,'1 hr'],[1.25,'1.25 hrs'],[1.5,'1.5 hrs'],[1.75,'1.75 hrs'],
-                      [2,'2 hrs'],[2.5,'2.5 hrs'],[3,'3 hrs'],[3.5,'3.5 hrs'],
-                      [4,'4 hrs'],[4.5,'4.5 hrs'],[5,'5 hrs'],[6,'6 hrs'],[7,'7 hrs'],[8,'8 hrs'],
-                    ].map(([v,l]) => (
-                      <option value={v}>{l}</option>
-                    ))}
-                  </select>
-                </div>
-                <div class="form-row time-desc-row">
-                  <label for="time-desc">Description</label>
-                  <input type="text" id="time-desc" name="description" placeholder="What you worked on..." list="time-desc-list" autocomplete="off" />
-                  <datalist id="time-desc-list"></datalist>
-                </div>
-                <div class="time-form-actions">
-                  <button type="submit" class="btn-save" id="time-submit">Log</button>
-                </div>
-              </div>
-              <div id="time-feedback" class="form-feedback"></div>
-            </form>
-            {timeEntries.length > 0 ? (
-              <div class="time-list" id="time-list">
-                {timeEntries.map(entry => (
-                  <div class="time-entry" data-entry-id={entry.id}>
-                    <div class="time-entry__date">{entry.date}</div>
-                    <div class="time-entry__hours">{entry.hours}h</div>
-                    <div class="time-entry__desc">{entry.description || '—'}</div>
-                    <button class="time-entry__delete" aria-label="Delete entry" data-entry-id={entry.id}>&times;</button>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p class="empty" id="time-empty">No time logged yet.</p>
-            )}
-          </div>
-        </section>
-      )}
-
-      <!-- Active: Deliverables right after Time -->
-      {isActive && (
-        <section class="card" id="deliverables-card">
-          <div class="card__header">
-            <h2>Deliverables</h2>
-            <span id="deliverables-status" class="save-status"></span>
-          </div>
-          <div class="card__body">
-            <form id="deliverable-form" class="deliverable-add-form">
-              <div class="deliverable-add-row">
-                <input type="text" id="deliverable-title" placeholder="Add a deliverable..." required class="deliverable-input" />
-                <button type="submit" class="btn-save">Add</button>
-              </div>
-            </form>
-            <div class="deliverable-list" id="deliverable-list">
-              {(lead.deliverables ?? []).length > 0 ? (
-                (lead.deliverables ?? []).map(item => (
-                  <div class="deliverable-item" data-item-id={item.id} data-status={item.status}>
-                    <button class={`deliverable-status-btn deliverable-status-btn--${item.status}`} data-item-id={item.id} aria-label="Toggle status">
-                      {item.status === 'done' ? '✓' : item.status === 'in-progress' ? '◑' : '○'}
-                    </button>
-                    <span class={`deliverable-title-text${item.status === 'done' ? ' deliverable-title-text--done' : ''}`}>{item.title}</span>
-                    <button class="deliverable-delete-btn" data-item-id={item.id} aria-label="Delete">&times;</button>
-                  </div>
-                ))
-              ) : (
-                <p class="empty" id="deliverable-empty">No deliverables defined yet.</p>
-              )}
-            </div>
-          </div>
-        </section>
-      )}
-
       <!-- Closed: Wrap-up card (primary card for this stage) -->
       {isClosed && (
         <section class="card">
@@ -517,20 +432,14 @@ const lastActivityDaysAgo = lastActivity
         </section>
       )}
 
-      <!-- Intake Form: full for Lead only, collapsible for all other stages -->
+      <!-- Intake Form: Lead stage only in main column -->
+      {lead.stage === 'Lead' && (
       <section class="card">
-        {lead.stage === 'Lead' ? (
-          <div class="card__header">
-            <h2>Intake Form</h2>
-            <button class="card-action-link intake-edit-btn" id="intake-edit-btn" type="button">Edit</button>
-          </div>
-        ) : (
-          <button class="card__toggle" id="intake-toggle" aria-expanded="false">
-            <span class="card__toggle-label">Intake Form</span>
-            <span class="card__toggle-arrow">▸</span>
-          </button>
-        )}
-        <div class="card__body intake-grid" id="intake-body" hidden={lead.stage !== 'Lead' || undefined}>
+        <div class="card__header">
+          <h2>Intake Form</h2>
+          <button class="card-action-link intake-edit-btn" id="intake-edit-btn" type="button">Edit</button>
+        </div>
+        <div class="card__body intake-grid" id="intake-body">
             {[
               ['Store URL', lead.storeUrl],
               ['Store Status', lead.storeStatus],
@@ -610,6 +519,7 @@ const lastActivityDaysAgo = lastActivity
             </div>
           </div>
         </section>
+      )}
 
       <!-- Discovery Call Guide: only pre-call stages -->
       {isPreCall && (
@@ -681,78 +591,142 @@ const lastActivityDaysAgo = lastActivity
         </section>
       )}
 
-      <!-- Notes: always shown -->
-      <section class="card">
-        <div class="card__header">
-          <h2>Your Notes</h2>
-          <span id="notes-status" class="save-status"></span>
+      <!-- Work Log: unified notes / time / deliverables — primary card for non-Lead stages -->
+      <section class="card" id="work-log">
+
+        <!-- Tab bar -->
+        <div class="work-tabs">
+          <button class="work-tab work-tab--active" data-tab="note" id="work-tab-note">Note</button>
+          {isActive && (
+            <button class="work-tab" data-tab="time" id="work-tab-time">
+              Time{monthlyHours > 0 ? ` · ${monthlyHours.toFixed(1)}h` : ''}
+            </button>
+          )}
+          {isActive && (
+            <button class="work-tab" data-tab="deliverable" id="work-tab-deliverable">
+              Deliverables{deliverablesInProgress > 0 ? ` · ${deliverablesInProgress}` : ''}
+            </button>
+          )}
+          <span id="activity-status" class="save-status work-status"></span>
         </div>
-        <div class="card__body">
-          <div class="md-editor" id="notes-editor">
-            <div class="md-toolbar">
+
+        <!-- Note panel -->
+        <div class="work-panel" id="work-panel-note">
+          <div class="work-note-header">
+            <select id="activity-type" class="work-type-select">
+              <option value="Note">Note</option>
+              <option value="Call">Call</option>
+              <option value="Email">Email</option>
+            </select>
+            <div class="md-toolbar md-toolbar--compact">
               <button type="button" class="md-btn md-btn--bold" data-action="bold" title="Bold">B</button>
               <button type="button" class="md-btn md-btn--italic" data-action="italic" title="Italic">I</button>
               <button type="button" class="md-btn" data-action="link" title="Link">⌘K</button>
+              <button type="button" class="md-btn md-btn--mono" data-action="code" title="Code">`</button>
               <button type="button" class="md-btn" data-action="heading" title="Heading">H2</button>
-              <button type="button" class="md-btn md-btn--mono" data-action="code" title="Inline code">`</button>
-              <button type="button" class="md-btn" data-action="list" title="Bullet list">—</button>
-              <div class="md-toolbar__sep"></div>
-              <button type="button" class="md-preview-toggle" id="notes-preview-toggle">Preview</button>
+              <button type="button" class="md-btn" data-action="list" title="List">—</button>
             </div>
-            <textarea
-              id="notes-textarea"
-              class="notes-textarea"
-              placeholder="Notes from the call — what they said, key problems, budget signals, next steps..."
-              data-lead-id={lead.id}
-            >{lead.internalNotes}</textarea>
-            <div id="notes-preview" class="md-preview md-content" hidden></div>
           </div>
-        </div>
-      </section>
-
-      <!-- Activity Log: always shown -->
-      <section class="card" id="activity-card">
-        <div class="card__header">
-          <h2>Activity</h2>
-          <span id="activity-status" class="save-status"></span>
-        </div>
-        <div class="card__body">
-          <form id="activity-form" class="activity-form">
-            <div class="activity-form-row">
-              <select id="activity-type" name="type" class="activity-type-select">
-                <option value="Note">Note</option>
-                <option value="Call">Call</option>
-                <option value="Email">Email</option>
-              </select>
-              <div class="activity-editor">
-                <div class="md-toolbar md-toolbar--compact">
-                  <button type="button" class="md-btn md-btn--bold" data-action="bold" title="Bold">B</button>
-                  <button type="button" class="md-btn md-btn--italic" data-action="italic" title="Italic">I</button>
-                  <button type="button" class="md-btn" data-action="link" title="Link">⌘K</button>
-                  <button type="button" class="md-btn md-btn--mono" data-action="code" title="Code">`</button>
-                </div>
-                <textarea id="activity-text" name="text" rows="3" placeholder="What happened..." required class="activity-textarea"></textarea>
-              </div>
-              <button type="submit" class="btn-save activity-submit">Log</button>
+          <form id="activity-form">
+            <textarea id="activity-text" rows="4" placeholder="What happened, decisions made, notes from a call..." class="work-textarea"></textarea>
+            <div class="work-panel-footer">
+              <button type="submit" class="btn-save">Log</button>
             </div>
           </form>
-          <div class="activity-list" id="activity-list">
-            {(lead.activityLog ?? []).length > 0 ? (
-              (lead.activityLog ?? []).map(entry => (
-                <div class="activity-entry" data-entry-id={entry.id}>
-                  <div class="activity-entry__meta">
-                    <span class={`activity-badge activity-badge--${entry.type.toLowerCase()}`}>{entry.type}</span>
-                    <span class="activity-entry__date">{new Date(entry.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
-                    <button class="activity-entry__delete" data-entry-id={entry.id} aria-label="Delete">&times;</button>
-                  </div>
-                  <div class="activity-entry__text md-content" set:html={marked.parse(entry.text)} />
-                </div>
-              ))
-            ) : (
-              <p class="empty" id="activity-empty">No activity logged yet.</p>
-            )}
-          </div>
         </div>
+
+        <!-- Time panel (Active only) -->
+        {isActive && (
+          <div class="work-panel" id="work-panel-time" hidden>
+            <form id="time-form">
+              <div class="work-time-row">
+                <div class="form-row">
+                  <label for="time-date">Date</label>
+                  <input type="date" id="time-date" name="date" required value={thisMonthPrefix + '-' + String(now.getDate()).padStart(2, '0')} />
+                </div>
+                <div class="form-row">
+                  <label for="time-hours">Hours</label>
+                  <select id="time-hours" name="hours">
+                    {[
+                      [0.25,'0.25'],[0.5,'0.5'],[0.75,'0.75'],
+                      [1,'1'],[1.25,'1.25'],[1.5,'1.5'],[1.75,'1.75'],
+                      [2,'2'],[2.5,'2.5'],[3,'3'],[3.5,'3.5'],
+                      [4,'4'],[4.5,'4.5'],[5,'5'],[6,'6'],[7,'7'],[8,'8'],
+                    ].map(([v,l]) => <option value={v}>{l}h</option>)}
+                  </select>
+                </div>
+                <div class="form-row work-time-desc-col">
+                  <label for="time-desc">Description</label>
+                  <input type="text" id="time-desc" name="description" placeholder="What you worked on..." list="time-desc-list" autocomplete="off" />
+                  <datalist id="time-desc-list"></datalist>
+                </div>
+              </div>
+              <div class="work-panel-footer">
+                <span id="time-month-label" class="work-time-summary">
+                  {contractHours ? `${monthlyHours.toFixed(1)} / ${contractHours}h this month` : `${monthlyHours.toFixed(1)}h this month`}
+                </span>
+                <div id="time-feedback" class="form-feedback"></div>
+                <button type="submit" id="time-submit" class="btn-save">Log Time</button>
+              </div>
+            </form>
+          </div>
+        )}
+
+        <!-- Deliverable panel (Active only) -->
+        {isActive && (
+          <div class="work-panel" id="work-panel-deliverable" hidden>
+            <form id="deliverable-form" class="deliverable-add-form">
+              <div class="deliverable-add-row">
+                <input type="text" id="deliverable-title" placeholder="Add a deliverable..." required class="deliverable-input" />
+                <button type="submit" class="btn-save">Add</button>
+              </div>
+              <span id="deliverables-status" class="save-status" style="margin-top:var(--space-2);display:block"></span>
+            </form>
+            <div class="deliverable-list" id="deliverable-list">
+              {(lead.deliverables ?? []).length > 0 ? (
+                (lead.deliverables ?? []).map(item => (
+                  <div class="deliverable-item" data-item-id={item.id} data-status={item.status}>
+                    <button class={`deliverable-status-btn deliverable-status-btn--${item.status}`} data-item-id={item.id} aria-label="Toggle status">
+                      {item.status === 'done' ? '✓' : item.status === 'in-progress' ? '◑' : '○'}
+                    </button>
+                    <span class={`deliverable-title-text${item.status === 'done' ? ' deliverable-title-text--done' : ''}`}>{item.title}</span>
+                    <button class="deliverable-delete-btn" data-item-id={item.id} aria-label="Delete">&times;</button>
+                  </div>
+                ))
+              ) : (
+                <p class="empty" id="deliverable-empty">No deliverables yet.</p>
+              )}
+            </div>
+          </div>
+        )}
+
+        <!-- Unified feed: activity entries + time entries, merged by date -->
+        <div class="work-feed" id="work-feed">
+          {feedItems.length > 0 ? feedItems.map(item => (
+            item.kind === 'activity' ? (
+              <div class="feed-entry feed-entry--activity" data-entry-id={item.data.id}>
+                <div class="feed-entry__meta">
+                  <span class={`activity-badge activity-badge--${item.data.type.toLowerCase()}`}>{item.data.type}</span>
+                  <span class="feed-entry__date">{new Date(item.data.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                  <button class="feed-entry__delete activity-entry__delete" data-entry-id={item.data.id} aria-label="Delete">&times;</button>
+                </div>
+                <div class="feed-entry__body md-content" set:html={marked.parse(item.data.text)} />
+              </div>
+            ) : (
+              <div class="feed-entry feed-entry--time" data-entry-id={item.data.id}>
+                <div class="feed-entry__meta">
+                  <span class="time-badge">{item.data.hours}h</span>
+                  <span class="feed-entry__date">{item.data.date}</span>
+                  <button class="feed-entry__delete time-entry__delete" data-entry-id={item.data.id} aria-label="Delete">&times;</button>
+                </div>
+                {item.data.description && <div class="feed-entry__body">{item.data.description}</div>}
+              </div>
+            )
+          )) : (
+            <p class="empty" id="work-feed-empty">Nothing logged yet.</p>
+          )}
+        </div>
+
       </section>
 
     </div>
@@ -1045,6 +1019,106 @@ const lastActivityDaysAgo = lastActivity
               </button>
             )}
             <span id="reminder-toggle-status" class="save-status" style="margin-top: var(--space-2); display:block"></span>
+          </div>
+        </section>
+      )}
+
+      <!-- Client Info: non-Lead stages — compact sidebar collapsible -->
+      {lead.stage !== 'Lead' && (
+        <section class="card">
+          <button class="card__toggle" id="client-info-toggle" aria-expanded="false">
+            <span class="card__toggle-label">Client Info</span>
+            <span class="card__toggle-arrow">▸</span>
+          </button>
+          <div class="card__body" id="client-info-body" hidden>
+            <div id="client-info-view">
+              {lead.storeUrl && (
+                <div class="ci-row">
+                  <span class="ci-label">Store</span>
+                  <a href={lead.storeUrl} target="_blank" rel="noopener" class="ci-value ci-value--link">{lead.storeUrl.replace(/^https?:\/\//, '')}</a>
+                </div>
+              )}
+              {lead.serviceInterest && (
+                <div class="ci-row">
+                  <span class="ci-label">Service</span>
+                  <span class="ci-value">{lead.serviceInterest.replace(/\s*\(\$[\d,]+(?:\/\w+)?\)/g, '')}</span>
+                </div>
+              )}
+              {lead.referral && (
+                <div class="ci-row">
+                  <span class="ci-label">Referral</span>
+                  <span class="ci-value">{lead.referral}</span>
+                </div>
+              )}
+              {lead.timezone && (
+                <div class="ci-row">
+                  <span class="ci-label">Timezone</span>
+                  <span class="ci-value">{lead.timezone}</span>
+                </div>
+              )}
+              {lead.challenge && (
+                <div class="ci-row ci-row--full">
+                  <span class="ci-label">Challenge</span>
+                  <span class="ci-value ci-value--wrap">{lead.challenge}</span>
+                </div>
+              )}
+              {lead.additionalNotes && (
+                <div class="ci-row ci-row--full">
+                  <span class="ci-label">Their Notes</span>
+                  <span class="ci-value ci-value--wrap">{lead.additionalNotes}</span>
+                </div>
+              )}
+              <button type="button" class="card-action-link" id="intake-edit-btn" style="margin-top:var(--space-3)">Edit</button>
+            </div>
+
+            <!-- Reuse intake edit form (same IDs, now in sidebar for non-Lead) -->
+            <div class="intake-edit-form" id="intake-edit-form" hidden>
+              <div class="intake-edit-row">
+                <label class="intake-edit-label" for="ie-store-url">Store URL</label>
+                <input class="intake-edit-input" id="ie-store-url" type="url" value={lead.storeUrl ?? ''} />
+              </div>
+              <div class="intake-edit-row">
+                <label class="intake-edit-label" for="ie-store-status">Store Status</label>
+                <select class="intake-edit-input" id="ie-store-status">
+                  {['Not started yet', 'In progress, not live', 'Live and selling'].map(s => (
+                    <option value={s} selected={s === lead.storeStatus}>{s}</option>
+                  ))}
+                </select>
+              </div>
+              <div class="intake-edit-row">
+                <label class="intake-edit-label" for="ie-service">Interested In</label>
+                <select class="intake-edit-input" id="ie-service">
+                  {['Clarity Session ($500)', 'Insider Retainer ($3,500/mo)', 'Store Launch Sprint ($2,500)', 'Not sure yet'].map(s => (
+                    <option value={s} selected={s === lead.serviceInterest || lead.serviceInterest?.startsWith(s.split(' (')[0])}>{s}</option>
+                  ))}
+                </select>
+              </div>
+              <div class="intake-edit-row">
+                <label class="intake-edit-label" for="ie-referral">Referral</label>
+                <input class="intake-edit-input" id="ie-referral" type="text" value={lead.referral ?? ''} />
+              </div>
+              <div class="intake-edit-row">
+                <label class="intake-edit-label" for="ie-timezone">Timezone</label>
+                <input class="intake-edit-input" id="ie-timezone" type="text" value={lead.timezone ?? ''} />
+              </div>
+              <div class="intake-edit-row">
+                <label class="intake-edit-label" for="ie-launch-date">Launch Date</label>
+                <input class="intake-edit-input" id="ie-launch-date" type="text" value={lead.launchDate ?? ''} />
+              </div>
+              <div class="intake-edit-row intake-edit-row--full">
+                <label class="intake-edit-label" for="ie-challenge">Their Challenge</label>
+                <textarea class="intake-edit-input intake-edit-textarea" id="ie-challenge" rows="4">{lead.challenge ?? ''}</textarea>
+              </div>
+              <div class="intake-edit-row intake-edit-row--full">
+                <label class="intake-edit-label" for="ie-notes">Their Notes</label>
+                <textarea class="intake-edit-input intake-edit-textarea" id="ie-notes" rows="3">{lead.additionalNotes ?? ''}</textarea>
+              </div>
+              <div class="intake-edit-actions">
+                <button class="btn-primary" id="intake-save-btn" type="button">Save</button>
+                <button class="card-action-link" id="intake-cancel-btn" type="button">Cancel</button>
+                <span class="save-status" id="intake-save-status"></span>
+              </div>
+            </div>
           </div>
         </section>
       )}
@@ -2459,62 +2533,164 @@ const lastActivityDaysAgo = lastActivity
   .todo-item:hover .todo-delete { opacity: 1; }
   .todo-delete:hover { color: #e53e3e; }
 
-  /* ── Activity Log ── */
-  .activity-form {
-    margin-bottom: var(--space-5);
+  /* ── Work Log ── */
+  .work-tabs {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding: var(--space-3) var(--space-6);
+    border-bottom: 1px solid var(--color-border);
+    background: var(--color-bg);
   }
 
-  .activity-form-row {
-    display: grid;
-    grid-template-columns: 100px 1fr auto;
-    gap: var(--space-3);
-    align-items: start;
-  }
-
-  .activity-type-select {
-    padding: var(--space-2) var(--space-3);
-    border: 1px solid var(--color-border);
+  .work-tab {
+    background: none;
+    border: 1px solid transparent;
     border-radius: var(--radius-md);
+    padding: var(--space-2) var(--space-4);
+    font-size: var(--text-xs);
+    font-family: var(--font-mono);
+    font-weight: 500;
+    color: var(--color-text-tertiary);
+    cursor: pointer;
+    letter-spacing: 0.02em;
+    transition: background 0.1s, color 0.1s, border-color 0.1s;
+  }
+
+  .work-tab:hover { color: var(--color-text); }
+
+  .work-tab--active {
     background: var(--color-bg-alt);
     color: var(--color-text);
+    border-color: var(--color-border);
+  }
+
+  .work-status {
+    margin-left: auto;
+  }
+
+  .work-panel {
+    padding: var(--space-4) var(--space-6);
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .work-note-header {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    margin-bottom: var(--space-3);
+  }
+
+  .work-type-select {
+    padding: var(--space-1) var(--space-2);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-bg-alt);
+    color: var(--color-text-secondary);
     font-family: var(--font-mono);
     font-size: var(--text-xs);
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    align-self: start;
+    flex-shrink: 0;
   }
 
-  .activity-textarea {
-    resize: vertical;
-    min-height: 48px;
-  }
-
-  .activity-submit {
-    align-self: flex-start;
-    height: 36px;
-  }
-
-  .activity-list {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-3);
-  }
-
-  .activity-entry {
+  .work-textarea {
+    width: 100%;
+    padding: var(--space-3) var(--space-4);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-md);
-    overflow: hidden;
+    font-family: inherit;
+    font-size: var(--text-sm);
+    line-height: 1.6;
+    resize: vertical;
+    background: var(--color-bg);
+    color: var(--color-text);
+    box-sizing: border-box;
+    transition: border-color 0.15s;
   }
 
-  .activity-entry__meta {
+  .work-textarea:focus { outline: none; border-color: var(--color-accent); }
+
+  .work-panel-footer {
     display: flex;
     align-items: center;
     gap: var(--space-3);
-    padding: var(--space-2) var(--space-4);
-    background: var(--color-bg-alt);
-    border-bottom: 1px solid var(--color-border);
+    margin-top: var(--space-3);
+    justify-content: flex-end;
   }
 
+  .work-time-row {
+    display: grid;
+    grid-template-columns: 130px 90px 1fr;
+    gap: var(--space-3);
+    align-items: end;
+  }
+
+  @media (max-width: 640px) {
+    .work-time-row { grid-template-columns: 1fr 1fr; }
+    .work-time-desc-col { grid-column: 1 / -1; }
+  }
+
+  .work-time-summary {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--color-text-tertiary);
+    flex: 1;
+  }
+
+  /* ── Unified Work Feed ── */
+  .work-feed {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .feed-entry {
+    display: flex;
+    flex-direction: column;
+    border-bottom: 1px solid var(--color-border);
+    transition: background 0.1s;
+  }
+
+  .feed-entry:last-child { border-bottom: none; }
+  .feed-entry:hover { background: var(--color-bg-alt); }
+
+  .feed-entry__meta {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-6) var(--space-2);
+  }
+
+  .feed-entry__date {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--color-text-tertiary);
+    flex: 1;
+  }
+
+  .feed-entry__delete {
+    background: none;
+    border: none;
+    color: var(--color-text-tertiary);
+    cursor: pointer;
+    font-size: var(--text-sm);
+    padding: 0 var(--space-1);
+    line-height: 1;
+    opacity: 0;
+    transition: opacity 0.15s, color 0.15s;
+  }
+
+  .feed-entry:hover .feed-entry__delete { opacity: 1; }
+  .feed-entry__delete:hover { color: #e53e3e; }
+
+  .feed-entry__body {
+    padding: 0 var(--space-6) var(--space-3);
+    font-size: var(--text-sm);
+    color: var(--color-text);
+    line-height: 1.6;
+  }
+
+  /* Activity badge (reused in feed) */
   .activity-badge {
     font-family: var(--font-mono);
     font-size: 10px;
@@ -2529,32 +2705,60 @@ const lastActivityDaysAgo = lastActivity
   .activity-badge--call { background: #1a3a2a; color: #68d391; border: 1px solid #2d6a4a; }
   .activity-badge--email { background: #1a2a3a; color: #63b3ed; border: 1px solid #2d4a6a; }
 
-  .activity-entry__date {
+  /* Time badge */
+  .time-badge {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 600;
+    padding: 1px var(--space-2);
+    border-radius: var(--radius-sm);
+    background: #2a2a1a;
+    color: #d4a84b;
+    border: 1px solid #4a3a1a;
+  }
+
+  /* Client Info sidebar card */
+  .ci-row {
+    display: grid;
+    grid-template-columns: 64px 1fr;
+    gap: var(--space-3);
+    padding: var(--space-2) 0;
+    border-bottom: 1px solid var(--color-border);
+    align-items: start;
+  }
+
+  .ci-row:last-of-type { border-bottom: none; }
+
+  .ci-row--full {
+    grid-template-columns: 1fr;
+    gap: var(--space-1);
+  }
+
+  .ci-label {
     font-family: var(--font-mono);
     font-size: var(--text-xs);
     color: var(--color-text-tertiary);
-    flex: 1;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding-top: 2px;
   }
 
-  .activity-entry__delete {
-    background: none;
-    border: none;
-    color: var(--color-text-tertiary);
-    cursor: pointer;
-    font-size: var(--text-sm);
-    padding: 0 var(--space-1);
-    line-height: 1;
-    transition: color 0.15s;
-  }
-
-  .activity-entry__delete:hover { color: #e53e3e; }
-
-  .activity-entry__text {
-    padding: var(--space-3) var(--space-4);
+  .ci-value {
     font-size: var(--text-sm);
     color: var(--color-text);
-    line-height: 1.55;
+    word-break: break-word;
+  }
+
+  .ci-value--link {
+    color: var(--color-accent);
+    text-decoration: none;
+  }
+
+  .ci-value--link:hover { text-decoration: underline; }
+
+  .ci-value--wrap {
     white-space: pre-wrap;
+    color: var(--color-text-secondary);
   }
 
   /* ── Deliverables ── */
@@ -2972,50 +3176,31 @@ function setupToolbar(toolbar, textarea) {
   });
 }
 
-// Set up notes toolbar
+// Set up work log note toolbar
 setupToolbar(
-  document.querySelector('#notes-editor .md-toolbar'),
-  document.getElementById('notes-textarea')
-);
-
-// Notes: preview toggle
-const notesPreviewToggle = document.getElementById('notes-preview-toggle');
-const notesPreview = document.getElementById('notes-preview');
-const notesEditorTextarea = document.getElementById('notes-textarea');
-let notesShowingPreview = false;
-
-if (notesPreviewToggle && notesPreview && notesEditorTextarea) {
-  notesPreviewToggle.addEventListener('click', () => {
-    notesShowingPreview = !notesShowingPreview;
-    if (notesShowingPreview) {
-      notesPreview.innerHTML = typeof marked !== 'undefined'
-        ? marked.parse(notesEditorTextarea.value || '*No notes yet.*')
-        : notesEditorTextarea.value;
-      notesPreview.hidden = false;
-      notesEditorTextarea.hidden = true;
-      notesPreviewToggle.textContent = 'Edit';
-    } else {
-      notesPreview.hidden = true;
-      notesEditorTextarea.hidden = false;
-      notesPreviewToggle.textContent = 'Preview';
-    }
-  });
-}
-
-// Set up activity toolbar
-setupToolbar(
-  document.querySelector('#activity-form .md-toolbar'),
+  document.querySelector('#work-panel-note .md-toolbar'),
   document.getElementById('activity-text')
 );
 
-// ── Intake Form toggle (collapsed reference in non-Lead stages) ──
-const intakeToggle = document.getElementById('intake-toggle');
-const intakeBody = document.getElementById('intake-body');
-if (intakeToggle && intakeBody) {
-  intakeToggle.addEventListener('click', () => {
-    const isOpen = intakeToggle.getAttribute('aria-expanded') === 'true';
-    intakeToggle.setAttribute('aria-expanded', String(!isOpen));
-    intakeBody.hidden = isOpen;
+// ── Work Log tab switching ──
+const workTabs = document.querySelectorAll('.work-tab');
+function switchWorkTab(targetTab) {
+  workTabs.forEach(btn => btn.classList.toggle('work-tab--active', btn.dataset.tab === targetTab));
+  ['note', 'time', 'deliverable'].forEach(tab => {
+    const panel = document.getElementById('work-panel-' + tab);
+    if (panel) panel.hidden = tab !== targetTab;
+  });
+}
+workTabs.forEach(btn => btn.addEventListener('click', () => switchWorkTab(btn.dataset.tab)));
+
+// ── Client Info toggle (non-Lead stages sidebar) ──
+const clientInfoToggle = document.getElementById('client-info-toggle');
+const clientInfoBody = document.getElementById('client-info-body');
+if (clientInfoToggle && clientInfoBody) {
+  clientInfoToggle.addEventListener('click', () => {
+    const isOpen = clientInfoToggle.getAttribute('aria-expanded') === 'true';
+    clientInfoToggle.setAttribute('aria-expanded', String(!isOpen));
+    clientInfoBody.hidden = isOpen;
   });
 }
 
@@ -3083,19 +3268,6 @@ const stageStatus = document.getElementById('stage-status');
 stageSelect.addEventListener('change', async () => {
   await patchLead({ stage: stageSelect.value, completedChecks: [] }, stageStatus);
   location.reload();
-});
-
-// ── Notes auto-save ──
-const notesTextarea = document.getElementById('notes-textarea');
-const notesStatus = document.getElementById('notes-status');
-let notesTimer = null;
-
-notesTextarea.addEventListener('input', () => {
-  notesStatus.textContent = '';
-  clearTimeout(notesTimer);
-  notesTimer = setTimeout(() => {
-    patchLead({ internalNotes: notesTextarea.value }, notesStatus);
-  }, 800);
 });
 
 // ── Action panel toggles ──
@@ -3324,41 +3496,29 @@ document.querySelectorAll('#stage-checklist .check-input').forEach(cb => {
   });
 });
 
-// ── Time tracking ──
+// ── Work Log: time tracking ──
 const timeForm = document.getElementById('time-form');
 const timeFeedback = document.getElementById('time-feedback');
 const timeMonthLabel = document.getElementById('time-month-label');
 
-function getMonthly() {
+function getMonthlyHours() {
   let total = 0;
-  document.querySelectorAll('.time-entry').forEach(entry => {
-    const dateEl = entry.querySelector('.time-entry__date');
-    const hoursEl = entry.querySelector('.time-entry__hours');
-    if (dateEl && dateEl.textContent && dateEl.textContent.startsWith(thisMonthPrefix) && hoursEl) {
-      total += parseFloat(hoursEl.textContent) || 0;
+  document.querySelectorAll('.feed-entry--time').forEach(entry => {
+    const dateEl = entry.querySelector('.feed-entry__date');
+    const badge = entry.querySelector('.time-badge');
+    if (dateEl && dateEl.textContent && dateEl.textContent.startsWith(thisMonthPrefix) && badge) {
+      total += parseFloat(badge.textContent) || 0;
     }
-  });
-  return total;
-}
-
-function getTotal() {
-  let total = 0;
-  document.querySelectorAll('.time-entry').forEach(entry => {
-    const hoursEl = entry.querySelector('.time-entry__hours');
-    if (hoursEl) total += parseFloat(hoursEl.textContent) || 0;
   });
   return total;
 }
 
 function updateTimeLabel() {
   if (!timeMonthLabel) return;
-  const month = getMonthly();
-  const total = getTotal();
-  let text = contractHoursPerMonth
-    ? month.toFixed(1) + ' / ' + contractHoursPerMonth + ' hrs this month'
-    : month.toFixed(1) + ' hrs this month';
-  if (total > month) text += ' · ' + total.toFixed(1) + ' total';
-  timeMonthLabel.textContent = text;
+  const month = getMonthlyHours();
+  timeMonthLabel.textContent = contractHoursPerMonth
+    ? month.toFixed(1) + ' / ' + contractHoursPerMonth + 'h this month'
+    : month.toFixed(1) + 'h this month';
 }
 
 function updateDescSuggestions() {
@@ -3366,9 +3526,9 @@ function updateDescSuggestions() {
   if (!datalist) return;
   datalist.innerHTML = '';
   const seen = new Set();
-  document.querySelectorAll('.time-entry__desc').forEach(el => {
+  document.querySelectorAll('.feed-entry--time .feed-entry__body').forEach(el => {
     const text = el.textContent && el.textContent.trim();
-    if (text && text !== '—' && !seen.has(text)) {
+    if (text && !seen.has(text)) {
       seen.add(text);
       const opt = document.createElement('option');
       opt.value = text;
@@ -3379,49 +3539,65 @@ function updateDescSuggestions() {
 
 updateDescSuggestions();
 
-function attachDeleteHandler(btn) {
-  btn.addEventListener('click', async () => {
-    const entryId = btn.dataset.entryId;
-    btn.textContent = '…';
-    try {
-      const res = await fetch('/api/time/' + leadId, {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ entryId }),
-      });
-      if (res.ok) {
-        btn.closest('.time-entry').remove();
-        updateTimeLabel();
-        updateDescSuggestions();
-        if (document.querySelectorAll('.time-entry').length === 0) {
-          const empty = document.createElement('p');
-          empty.className = 'empty';
-          empty.id = 'time-empty';
-          empty.textContent = 'No time logged yet.';
-          const list = document.querySelector('.time-list');
-          if (list) list.replaceWith(empty);
-        }
-      } else {
-        btn.textContent = '×';
-      }
-    } catch {
-      btn.textContent = '×';
+function renderTimeEntry(entry) {
+  const div = document.createElement('div');
+  div.className = 'feed-entry feed-entry--time';
+  div.dataset.entryId = entry.id;
+  div.innerHTML =
+    '<div class="feed-entry__meta">' +
+      '<span class="time-badge">' + entry.hours + 'h</span>' +
+      '<span class="feed-entry__date">' + entry.date + '</span>' +
+      '<button class="feed-entry__delete time-entry__delete" data-entry-id="' + entry.id + '" aria-label="Delete">&times;</button>' +
+    '</div>' +
+    (entry.description ? '<div class="feed-entry__body">' + entry.description.replace(/&/g,'&amp;').replace(/</g,'&lt;') + '</div>' : '');
+  div.querySelector('.time-entry__delete').addEventListener('click', async () => {
+    div.style.opacity = '0.4';
+    const res = await fetch('/api/time/' + leadId, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ entryId: entry.id }),
+    });
+    if (res.ok) {
+      div.remove();
+      updateTimeLabel();
+      updateDescSuggestions();
+      checkFeedEmpty();
+    } else {
+      div.style.opacity = '1';
     }
   });
+  return div;
 }
 
-document.querySelectorAll('.time-entry__delete').forEach(attachDeleteHandler);
+document.querySelectorAll('.time-entry__delete').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    const entryId = btn.dataset.entryId;
+    const row = btn.closest('.feed-entry--time');
+    if (row) row.style.opacity = '0.4';
+    const res = await fetch('/api/time/' + leadId, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ entryId }),
+    });
+    if (res.ok) {
+      if (row) row.remove();
+      updateTimeLabel();
+      updateDescSuggestions();
+      checkFeedEmpty();
+    } else {
+      if (row) row.style.opacity = '1';
+    }
+  });
+});
 
 timeForm && timeForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   const btn = document.getElementById('time-submit');
   btn.disabled = true;
-  timeFeedback.textContent = '';
-
+  if (timeFeedback) timeFeedback.textContent = '';
   const date = timeForm.elements.namedItem('date').value;
   const hours = parseFloat(timeForm.elements.namedItem('hours').value);
   const description = timeForm.elements.namedItem('description').value.trim();
-
   try {
     const res = await fetch('/api/time/' + leadId, {
       method: 'POST',
@@ -3430,67 +3606,49 @@ timeForm && timeForm.addEventListener('submit', async (e) => {
     });
     const entry = await res.json();
     if (!res.ok) throw new Error(entry.error || 'Failed');
-
-    const row = document.createElement('div');
-    row.className = 'time-entry';
-    row.dataset.entryId = entry.id;
-    row.innerHTML =
-      '<div class="time-entry__date">' + entry.date + '</div>' +
-      '<div class="time-entry__hours">' + entry.hours + 'h</div>' +
-      '<div class="time-entry__desc">' + (entry.description || '—') + '</div>' +
-      '<button class="time-entry__delete" data-entry-id="' + entry.id + '" aria-label="Delete">×</button>';
-    attachDeleteHandler(row.querySelector('.time-entry__delete'));
-
-    const existingList = document.getElementById('time-list');
-    if (existingList) {
-      existingList.insertAdjacentElement('afterbegin', row);
-    } else {
-      const list = document.createElement('div');
-      list.className = 'time-list';
-      list.id = 'time-list';
-      list.appendChild(row);
-      const empty = document.getElementById('time-empty');
-      if (empty) empty.replaceWith(list);
-    }
-
+    prependToFeed(renderTimeEntry(entry));
     updateTimeLabel();
     updateDescSuggestions();
     timeForm.elements.namedItem('description').value = '';
   } catch (err) {
-    timeFeedback.textContent = (err && err.message) || 'Error logging time';
-    timeFeedback.className = 'form-feedback error';
+    if (timeFeedback) { timeFeedback.textContent = (err && err.message) || 'Error'; timeFeedback.className = 'form-feedback error'; }
   } finally {
     btn.disabled = false;
   }
 });
 
-// ── Activity Log ──
+// ── Work Log: activity (notes / calls / emails) ──
 let activityLog = initialActivityLog.slice();
 const activityStatus = document.getElementById('activity-status');
 
 function renderActivityEntry(entry) {
   const div = document.createElement('div');
-  div.className = 'activity-entry';
+  div.className = 'feed-entry feed-entry--activity';
   div.dataset.entryId = entry.id;
   const typeClass = 'activity-badge activity-badge--' + entry.type.toLowerCase();
   const dateStr = new Date(entry.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   div.innerHTML =
-    '<div class="activity-entry__meta">' +
+    '<div class="feed-entry__meta">' +
       '<span class="' + typeClass + '">' + entry.type + '</span>' +
-      '<span class="activity-entry__date">' + dateStr + '</span>' +
-      '<button class="activity-entry__delete" data-entry-id="' + entry.id + '" aria-label="Delete">&times;</button>' +
+      '<span class="feed-entry__date">' + dateStr + '</span>' +
+      '<button class="feed-entry__delete activity-entry__delete" data-entry-id="' + entry.id + '" aria-label="Delete">&times;</button>' +
     '</div>' +
-    '<div class="activity-entry__text md-content">' + (typeof marked !== 'undefined' ? marked.parse(entry.text) : entry.text.replace(/&/g,'&amp;').replace(/</g,'&lt;')) + '</div>';
+    '<div class="feed-entry__body md-content">' + (typeof marked !== 'undefined' ? marked.parse(entry.text) : entry.text.replace(/&/g,'&amp;').replace(/</g,'&lt;')) + '</div>';
   div.querySelector('.activity-entry__delete').addEventListener('click', () => deleteActivityEntry(entry.id));
   return div;
 }
 
-function attachActivityDeleteHandlers() {
-  document.querySelectorAll('.activity-entry__delete').forEach(btn => {
-    btn.addEventListener('click', () => deleteActivityEntry(btn.dataset.entryId));
-  });
+function checkFeedEmpty() {
+  const feed = document.getElementById('work-feed');
+  if (!feed) return;
+  if (feed.children.length === 0) {
+    feed.innerHTML = '<p class="empty" id="work-feed-empty">Nothing logged yet.</p>';
+  }
 }
-attachActivityDeleteHandlers();
+
+document.querySelectorAll('.activity-entry__delete').forEach(btn => {
+  btn.addEventListener('click', () => deleteActivityEntry(btn.dataset.entryId));
+});
 
 async function deleteActivityEntry(entryId) {
   const res = await fetch('/api/activity/' + leadId, {
@@ -3498,14 +3656,19 @@ async function deleteActivityEntry(entryId) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ entryId }),
   });
-  if (!res.ok) { activityStatus.textContent = 'Error'; activityStatus.className = 'save-status error'; return; }
+  if (!res.ok) { if (activityStatus) { activityStatus.textContent = 'Error'; activityStatus.className = 'save-status error'; } return; }
   activityLog = activityLog.filter(e => e.id !== entryId);
-  const el = document.querySelector('.activity-entry[data-entry-id="' + entryId + '"]');
+  const el = document.querySelector('.feed-entry[data-entry-id="' + entryId + '"]');
   if (el) el.remove();
-  if (activityLog.length === 0) {
-    const list = document.getElementById('activity-list');
-    if (list) list.innerHTML = '<p class="empty" id="activity-empty">No activity logged yet.</p>';
-  }
+  checkFeedEmpty();
+}
+
+function prependToFeed(el) {
+  const feed = document.getElementById('work-feed');
+  if (!feed) return;
+  const empty = document.getElementById('work-feed-empty');
+  if (empty) empty.remove();
+  feed.insertAdjacentElement('afterbegin', el);
 }
 
 const activityForm = document.getElementById('activity-form');
@@ -3514,26 +3677,17 @@ activityForm && activityForm.addEventListener('submit', async (e) => {
   const type = document.getElementById('activity-type').value;
   const text = document.getElementById('activity-text').value.trim();
   if (!text) return;
-
-  activityStatus.textContent = 'Saving...';
-  activityStatus.className = 'save-status saving';
+  if (activityStatus) { activityStatus.textContent = 'Saving...'; activityStatus.className = 'save-status saving'; }
   const res = await fetch('/api/activity/' + leadId, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ type, text }),
   });
-  if (!res.ok) { activityStatus.textContent = 'Error'; activityStatus.className = 'save-status error'; return; }
+  if (!res.ok) { if (activityStatus) { activityStatus.textContent = 'Error'; activityStatus.className = 'save-status error'; } return; }
   const entry = await res.json();
   activityLog.unshift(entry);
-  activityStatus.textContent = 'Saved ✓';
-  activityStatus.className = 'save-status saved';
-  setTimeout(() => { activityStatus.textContent = ''; }, 2000);
-
-  const list = document.getElementById('activity-list');
-  const empty = document.getElementById('activity-empty');
-  if (empty) empty.remove();
-  if (list) list.insertAdjacentElement('afterbegin', renderActivityEntry(entry));
-
+  if (activityStatus) { activityStatus.textContent = 'Saved ✓'; activityStatus.className = 'save-status saved'; setTimeout(() => { activityStatus.textContent = ''; }, 2000); }
+  prependToFeed(renderActivityEntry(entry));
   document.getElementById('activity-text').value = '';
 });
 
@@ -3740,13 +3894,11 @@ if (btnFollowupSummary) {
 const btnNaFollowup = document.getElementById('btn-na-followup');
 if (btnNaFollowup) {
   btnNaFollowup.addEventListener('click', () => {
-    const panelFollowup = document.getElementById('panel-followup');
-    const btnFollowupToggle = document.getElementById('btn-followup');
-    if (panelFollowup && btnFollowupToggle) {
-      panelFollowup.hidden = false;
-      btnFollowupToggle.setAttribute('aria-expanded', 'true');
-      panelFollowup.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }
+    // Scroll to work log and focus the note textarea
+    const workLog = document.getElementById('work-log');
+    if (workLog) workLog.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    switchWorkTab('note');
+    setTimeout(() => { const ta = document.getElementById('activity-text'); if (ta) ta.focus(); }, 300);
   });
 }
 
@@ -3767,12 +3919,10 @@ if (btnNaGuide) {
 const btnNaLogtime = document.getElementById('btn-na-logtime');
 if (btnNaLogtime) {
   btnNaLogtime.addEventListener('click', () => {
-    const timeCard = document.getElementById('time-card');
-    if (timeCard) timeCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    setTimeout(() => {
-      const timeSubmit = document.getElementById('time-submit');
-      if (timeSubmit) timeSubmit.focus();
-    }, 400);
+    const workLog = document.getElementById('work-log');
+    if (workLog) workLog.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    switchWorkTab('time');
+    setTimeout(() => { const d = document.getElementById('time-desc'); if (d) d.focus(); }, 300);
   });
 }
 
