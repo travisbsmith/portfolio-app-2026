@@ -614,23 +614,24 @@ const lastActivityDaysAgo = lastActivity
 
         <!-- Note panel -->
         <div class="work-panel" id="work-panel-note">
-          <div class="work-note-header">
-            <select id="activity-type" class="work-type-select">
-              <option value="Note">Note</option>
-              <option value="Call">Call</option>
-              <option value="Email">Email</option>
-            </select>
-            <div class="md-toolbar md-toolbar--compact">
-              <button type="button" class="md-btn md-btn--bold" data-action="bold" title="Bold">B</button>
-              <button type="button" class="md-btn md-btn--italic" data-action="italic" title="Italic">I</button>
-              <button type="button" class="md-btn" data-action="link" title="Link">⌘K</button>
-              <button type="button" class="md-btn md-btn--mono" data-action="code" title="Code">`</button>
-              <button type="button" class="md-btn" data-action="heading" title="Heading">H2</button>
-              <button type="button" class="md-btn" data-action="list" title="List">—</button>
+          <form id="activity-form" class="activity-form-container">
+            <div class="md-editor activity-editor">
+              <div class="md-toolbar md-toolbar--compact">
+                <select id="activity-type" class="work-type-select md-select" style="margin-right: var(--space-2); border: none; background: transparent; cursor: pointer; outline: none;">
+                  <option value="Note">Note</option>
+                  <option value="Call">Call</option>
+                  <option value="Email">Email</option>
+                </select>
+                <button type="button" class="md-btn md-btn--bold" data-action="bold" title="Bold">B</button>
+                <button type="button" class="md-btn md-btn--italic" data-action="italic" title="Italic">I</button>
+                <button type="button" class="md-btn" data-action="link" title="Link">⌘K</button>
+                <span class="md-toolbar__sep"></span>
+                <button type="button" class="md-btn md-btn--mono" data-action="code" title="Code">`</button>
+                <button type="button" class="md-btn" data-action="heading" title="Heading">H2</button>
+                <button type="button" class="md-btn" data-action="list" title="List">—</button>
+              </div>
+              <textarea id="activity-text" rows="4" placeholder="What happened, decisions made, notes from a call..." class="work-textarea md-textarea" style="border-top-left-radius: 0; border-top-right-radius: 0; border-top: 0;"></textarea>
             </div>
-          </div>
-          <form id="activity-form">
-            <textarea id="activity-text" rows="4" placeholder="What happened, decisions made, notes from a call..." class="work-textarea"></textarea>
             <div class="work-panel-footer">
               <button type="submit" class="btn-save">Save</button>
             </div>
@@ -3708,13 +3709,13 @@ activityForm && activityForm.addEventListener('submit', async (e) => {
     });
     if (!res.ok) {
       const msg = await res.text().catch(() => 'Error');
-      if (activityStatus) { activityStatus.textContent = 'Error: ' + res.status; activityStatus.className = 'save-status error'; }
+      if (activityStatus) { activityStatus.textContent = 'Error: ' + msg; activityStatus.className = 'save-status error'; }
       return;
     }
     const entry = await res.json();
     activityLog.unshift(entry);
     if (activityStatus) { activityStatus.textContent = 'Saved ✓'; activityStatus.className = 'save-status saved'; setTimeout(() => { activityStatus.textContent = ''; }, 2000); }
-    prependToFeed(renderActivityEntry(entry));
+    prependToFeed(createActivityEntry(entry));
     if (textEl) textEl.value = '';
   } catch (err) {
     if (activityStatus) { activityStatus.textContent = 'Network error'; activityStatus.className = 'save-status error'; }
