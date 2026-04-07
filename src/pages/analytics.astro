@@ -16,14 +16,16 @@ let analyticsData: any = null;
 let postsData: any = null;
 
 try {
-  const kvBase = process.env.KV_REST_API_URL;
-  const kvToken = process.env.KV_REST_API_TOKEN;
+  const kvBase = import.meta.env.KV_REST_API_URL ?? process.env?.KV_REST_API_URL;
+  const kvToken = import.meta.env.KV_REST_API_TOKEN ?? process.env?.KV_REST_API_TOKEN;
   if (kvBase && kvToken) {
     const res = await fetch(`${kvBase}/get/analytics-cache`, {
       headers: { Authorization: `Bearer ${kvToken}` },
     });
     const json = await res.json() as { result: any };
-    if (json.result) analyticsData = json.result;
+    if (json.result) {
+      analyticsData = typeof json.result === 'string' ? JSON.parse(json.result) : json.result;
+    }
   }
 } catch (e) {
   console.error('Could not load analytics cache:', e);
