@@ -60,10 +60,28 @@ export async function sendEmail({
   const { data, error } = await resend.emails.send({
     from: `Travis Smith <${TRAVIS}>`,
     to,
-    ...(ccRecipients.length > 0 ? { cc: ccRecipients } : {}),
+    ...(ccRecipients.length > 0 ? { bcc: ccRecipients } : {}),
     replyTo,
     subject,
-    html,
+    html: `<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <style>
+      body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }
+      h2 { color: #111; margin-top: 0; }
+      h3 { color: #222; margin-top: 24px; }
+      p { margin: 16px 0; }
+      a { color: #2b6cb0; text-decoration: none; }
+      a:hover { text-decoration: underline; }
+      ul { padding-left: 20px; }
+      li { margin-bottom: 8px; }
+    </style>
+  </head>
+  <body>
+    ${html}
+  </body>
+</html>`,
   });
   if (error) {
     console.error('Resend error:', error);
