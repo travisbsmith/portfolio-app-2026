@@ -708,9 +708,10 @@ const lastActivityDaysAgo = lastActivity
         <div class="work-feed" id="work-feed">
           {feedItems.length > 0 ? feedItems.map(item => (
             item.kind === 'activity' ? (
-              <div class="feed-entry feed-entry--activity" data-entry-id={item.data.id}>
+              <div class={`feed-entry feed-entry--activity feed-entry--${item.data.type.toLowerCase()}`} data-entry-id={item.data.id}>
                 <div class="feed-entry__meta">
                   <span class={`activity-badge activity-badge--${item.data.type.toLowerCase()}`}>{item.data.type}</span>
+                  <span class="feed-entry__sep">·</span>
                   <span class="feed-entry__date">{new Date(item.data.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
                   <button class="feed-entry__delete activity-entry__delete" data-entry-id={item.data.id} aria-label="Delete">&times;</button>
                 </div>
@@ -720,10 +721,12 @@ const lastActivityDaysAgo = lastActivity
               <div class="feed-entry feed-entry--time" data-entry-id={item.data.id}>
                 <div class="feed-entry__meta">
                   <span class="time-badge">{item.data.hours}h</span>
+                  <span class="feed-entry__sep">·</span>
                   <span class="feed-entry__date">{item.data.date}</span>
+                  {item.data.description && <span class="feed-entry__sep">·</span>}
+                  {item.data.description && <span class="feed-entry__desc">{item.data.description}</span>}
                   <button class="feed-entry__delete time-entry__delete" data-entry-id={item.data.id} aria-label="Delete">&times;</button>
                 </div>
-                {item.data.description && <div class="feed-entry__body">{item.data.description}</div>}
               </div>
             )
           )) : (
@@ -2670,24 +2673,46 @@ const lastActivityDaysAgo = lastActivity
     display: flex;
     flex-direction: column;
     border-bottom: 1px solid var(--color-border);
-    transition: background 0.1s;
+    border-left: 3px solid transparent;
+    transition: background 0.15s, border-color 0.15s;
+    padding-left: var(--space-1);
   }
 
   .feed-entry:last-child { border-bottom: none; }
   .feed-entry:hover { background: var(--color-bg-alt); }
 
+  .feed-entry--activity.feed-entry--note   { border-left-color: var(--color-border-strong, #d1d5db); }
+  .feed-entry--activity.feed-entry--call   { border-left-color: #48bb78; }
+  .feed-entry--activity.feed-entry--email  { border-left-color: #63b3ed; }
+  .feed-entry--time                        { border-left-color: #d4a84b; }
+
   .feed-entry__meta {
     display: flex;
     align-items: center;
-    gap: var(--space-3);
-    padding: var(--space-3) var(--space-6) var(--space-2);
+    gap: var(--space-2);
+    padding: var(--space-3) var(--space-5) var(--space-1) var(--space-4);
+  }
+
+  .feed-entry__sep {
+    color: var(--color-text-tertiary);
+    font-size: 10px;
+    opacity: 0.5;
+    flex-shrink: 0;
   }
 
   .feed-entry__date {
     font-family: var(--font-mono);
     font-size: var(--text-xs);
     color: var(--color-text-tertiary);
+  }
+
+  .feed-entry__desc {
+    font-size: var(--text-xs);
+    color: var(--color-text-secondary);
     flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .feed-entry__delete {
@@ -2695,21 +2720,28 @@ const lastActivityDaysAgo = lastActivity
     border: none;
     color: var(--color-text-tertiary);
     cursor: pointer;
-    font-size: var(--text-sm);
-    padding: 0 var(--space-1);
+    font-size: 15px;
+    width: 22px;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-sm);
     line-height: 1;
     opacity: 0;
-    transition: opacity 0.15s, color 0.15s;
+    transition: opacity 0.15s, color 0.15s, background 0.15s;
+    flex-shrink: 0;
+    margin-left: auto;
   }
 
   .feed-entry:hover .feed-entry__delete { opacity: 1; }
-  .feed-entry__delete:hover { color: #e53e3e; }
+  .feed-entry__delete:hover { color: #e53e3e; background: #fff0f0; }
 
   .feed-entry__body {
-    padding: 0 var(--space-6) var(--space-3);
+    padding: var(--space-1) var(--space-5) var(--space-3) var(--space-4);
     font-size: var(--text-sm);
     color: var(--color-text);
-    line-height: 1.6;
+    line-height: 1.65;
   }
 
   /* Activity badge (reused in feed) */
@@ -2717,26 +2749,28 @@ const lastActivityDaysAgo = lastActivity
     font-family: var(--font-mono);
     font-size: 10px;
     text-transform: uppercase;
-    letter-spacing: 0.06em;
-    padding: 1px var(--space-2);
+    letter-spacing: 0.07em;
+    padding: 2px 7px;
     border-radius: var(--radius-sm);
-    font-weight: 600;
+    font-weight: 700;
+    flex-shrink: 0;
   }
 
-  .activity-badge--note { background: var(--color-bg); color: var(--color-text-tertiary); border: 1px solid var(--color-border); }
-  .activity-badge--call { background: #1a3a2a; color: #68d391; border: 1px solid #2d6a4a; }
+  .activity-badge--note  { background: var(--color-bg-alt); color: var(--color-text-secondary); border: 1px solid var(--color-border); }
+  .activity-badge--call  { background: #1a3a2a; color: #68d391; border: 1px solid #2d6a4a; }
   .activity-badge--email { background: #1a2a3a; color: #63b3ed; border: 1px solid #2d4a6a; }
 
   /* Time badge */
   .time-badge {
     font-family: var(--font-mono);
     font-size: 10px;
-    font-weight: 600;
-    padding: 1px var(--space-2);
+    font-weight: 700;
+    padding: 2px 7px;
     border-radius: var(--radius-sm);
     background: #2a2a1a;
     color: #d4a84b;
     border: 1px solid #4a3a1a;
+    flex-shrink: 0;
   }
 
   /* Client Info sidebar card */
@@ -3583,13 +3617,15 @@ function renderTimeEntry(entry) {
   const div = document.createElement('div');
   div.className = 'feed-entry feed-entry--time';
   div.dataset.entryId = entry.id;
+  const safeDesc = entry.description ? entry.description.replace(/&/g,'&amp;').replace(/</g,'&lt;') : '';
   div.innerHTML =
     '<div class="feed-entry__meta">' +
       '<span class="time-badge">' + entry.hours + 'h</span>' +
+      '<span class="feed-entry__sep">&middot;</span>' +
       '<span class="feed-entry__date">' + entry.date + '</span>' +
+      (safeDesc ? '<span class="feed-entry__sep">&middot;</span><span class="feed-entry__desc">' + safeDesc + '</span>' : '') +
       '<button class="feed-entry__delete time-entry__delete" data-entry-id="' + entry.id + '" aria-label="Delete">&times;</button>' +
-    '</div>' +
-    (entry.description ? '<div class="feed-entry__body">' + entry.description.replace(/&/g,'&amp;').replace(/</g,'&lt;') + '</div>' : '');
+    '</div>';
   div.querySelector('.time-entry__delete').addEventListener('click', async () => {
     div.style.opacity = '0.4';
     const res = await fetch('/api/time/' + leadId, {
@@ -3663,13 +3699,14 @@ const activityStatus = document.getElementById('activity-status');
 
 function renderActivityEntry(entry) {
   const div = document.createElement('div');
-  div.className = 'feed-entry feed-entry--activity';
+  div.className = 'feed-entry feed-entry--activity feed-entry--' + entry.type.toLowerCase();
   div.dataset.entryId = entry.id;
   const typeClass = 'activity-badge activity-badge--' + entry.type.toLowerCase();
   const dateStr = new Date(entry.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   div.innerHTML =
     '<div class="feed-entry__meta">' +
       '<span class="' + typeClass + '">' + entry.type + '</span>' +
+      '<span class="feed-entry__sep">&middot;</span>' +
       '<span class="feed-entry__date">' + dateStr + '</span>' +
       '<button class="feed-entry__delete activity-entry__delete" data-entry-id="' + entry.id + '" aria-label="Delete">&times;</button>' +
     '</div>' +
