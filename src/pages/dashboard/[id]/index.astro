@@ -500,8 +500,7 @@ const notesByPhase: Record<string, ActivityEntry[]> = Object.fromEntries(
         </section>
       )}
 
-      <!-- Intake Form: Lead stage only in main column -->
-      {lead.stage === 'Lead' && (
+      <!-- Intake Form: all stages -->
       <section class="card">
         <div class="card__header">
           <h2>Intake Form</h2>
@@ -509,6 +508,7 @@ const notesByPhase: Record<string, ActivityEntry[]> = Object.fromEntries(
         </div>
         <div class="card__body intake-grid" id="intake-body">
             {[
+              ['Email', lead.email],
               ['Store URL', lead.storeUrl],
               ['Store Status', lead.storeStatus],
               ['Launch Date', lead.launchDate],
@@ -540,6 +540,10 @@ const notesByPhase: Record<string, ActivityEntry[]> = Object.fromEntries(
 
           <!-- Intake edit form (hidden until Edit is clicked) -->
           <div class="card__body intake-edit-form" id="intake-edit-form" hidden>
+            <div class="intake-edit-row">
+              <label class="intake-edit-label" for="ie-email">Email</label>
+              <input class="intake-edit-input" id="ie-email" type="email" value={lead.email ?? ''} />
+            </div>
             <div class="intake-edit-row">
               <label class="intake-edit-label" for="ie-store-url">Store URL</label>
               <input class="intake-edit-input" id="ie-store-url" type="url" value={lead.storeUrl ?? ''} />
@@ -587,7 +591,6 @@ const notesByPhase: Record<string, ActivityEntry[]> = Object.fromEntries(
             </div>
           </div>
         </section>
-      )}
 
       <!-- Discovery Call Guide: only pre-call stages -->
       {isPreCall && (
@@ -1127,105 +1130,6 @@ const notesByPhase: Record<string, ActivityEntry[]> = Object.fromEntries(
         </section>
       )}
 
-      <!-- Client Info: non-Lead stages — compact sidebar collapsible -->
-      {lead.stage !== 'Lead' && (
-        <section class="card">
-          <button class="card__toggle" id="client-info-toggle" aria-expanded="false">
-            <span class="card__toggle-label">Client Info</span>
-            <span class="card__toggle-arrow">▸</span>
-          </button>
-          <div class="card__body" id="client-info-body" hidden>
-            <div id="client-info-view">
-              {lead.storeUrl && (
-                <div class="ci-row">
-                  <span class="ci-label">Store</span>
-                  <a href={lead.storeUrl} target="_blank" rel="noopener" class="ci-value ci-value--link">{lead.storeUrl.replace(/^https?:\/\//, '')}</a>
-                </div>
-              )}
-              {lead.serviceInterest && (
-                <div class="ci-row">
-                  <span class="ci-label">Service</span>
-                  <span class="ci-value">{lead.serviceInterest.replace(/\s*\(\$[\d,]+(?:\/\w+)?\)/g, '')}</span>
-                </div>
-              )}
-              {lead.referral && (
-                <div class="ci-row">
-                  <span class="ci-label">Referral</span>
-                  <span class="ci-value">{lead.referral}</span>
-                </div>
-              )}
-              {lead.timezone && (
-                <div class="ci-row">
-                  <span class="ci-label">Timezone</span>
-                  <span class="ci-value">{lead.timezone}</span>
-                </div>
-              )}
-              {lead.challenge && (
-                <div class="ci-row ci-row--full">
-                  <span class="ci-label">Challenge</span>
-                  <span class="ci-value ci-value--wrap">{lead.challenge}</span>
-                </div>
-              )}
-              {lead.additionalNotes && (
-                <div class="ci-row ci-row--full">
-                  <span class="ci-label">Their Notes</span>
-                  <span class="ci-value ci-value--wrap">{lead.additionalNotes}</span>
-                </div>
-              )}
-              <button type="button" class="card-action-link" id="intake-edit-btn" style="margin-top:var(--space-3)">Edit</button>
-            </div>
-
-            <!-- Reuse intake edit form (same IDs, now in sidebar for non-Lead) -->
-            <div class="intake-edit-form" id="intake-edit-form" hidden>
-              <div class="intake-edit-row">
-                <label class="intake-edit-label" for="ie-store-url">Store URL</label>
-                <input class="intake-edit-input" id="ie-store-url" type="url" value={lead.storeUrl ?? ''} />
-              </div>
-              <div class="intake-edit-row">
-                <label class="intake-edit-label" for="ie-store-status">Store Status</label>
-                <select class="intake-edit-input" id="ie-store-status">
-                  {['Not started yet', 'In progress, not live', 'Live and selling'].map(s => (
-                    <option value={s} selected={s === lead.storeStatus}>{s}</option>
-                  ))}
-                </select>
-              </div>
-              <div class="intake-edit-row">
-                <label class="intake-edit-label" for="ie-service">Interested In</label>
-                <select class="intake-edit-input" id="ie-service">
-                  {['Clarity Session ($500)', 'Insider Retainer ($3,500/mo)', 'Store Launch Sprint ($2,500)', 'Not sure yet'].map(s => (
-                    <option value={s} selected={s === lead.serviceInterest || lead.serviceInterest?.startsWith(s.split(' (')[0])}>{s}</option>
-                  ))}
-                </select>
-              </div>
-              <div class="intake-edit-row">
-                <label class="intake-edit-label" for="ie-referral">Referral</label>
-                <input class="intake-edit-input" id="ie-referral" type="text" value={lead.referral ?? ''} />
-              </div>
-              <div class="intake-edit-row">
-                <label class="intake-edit-label" for="ie-timezone">Timezone</label>
-                <input class="intake-edit-input" id="ie-timezone" type="text" value={lead.timezone ?? ''} />
-              </div>
-              <div class="intake-edit-row">
-                <label class="intake-edit-label" for="ie-launch-date">Launch Date</label>
-                <input class="intake-edit-input" id="ie-launch-date" type="text" value={lead.launchDate ?? ''} />
-              </div>
-              <div class="intake-edit-row intake-edit-row--full">
-                <label class="intake-edit-label" for="ie-challenge">Their Challenge</label>
-                <textarea class="intake-edit-input intake-edit-textarea" id="ie-challenge" rows="4">{lead.challenge ?? ''}</textarea>
-              </div>
-              <div class="intake-edit-row intake-edit-row--full">
-                <label class="intake-edit-label" for="ie-notes">Their Notes</label>
-                <textarea class="intake-edit-input intake-edit-textarea" id="ie-notes" rows="3">{lead.additionalNotes ?? ''}</textarea>
-              </div>
-              <div class="intake-edit-actions">
-                <button class="btn-primary" id="intake-save-btn" type="button">Save</button>
-                <button class="card-action-link" id="intake-cancel-btn" type="button">Cancel</button>
-                <span class="save-status" id="intake-save-status"></span>
-              </div>
-            </div>
-          </div>
-        </section>
-      )}
 
     </aside>
   </div>
@@ -3478,16 +3382,6 @@ function switchWorkTab(targetTab) {
 workTabs.forEach(btn => btn.addEventListener('click', () => switchWorkTab(btn.dataset.tab)));
 
 // ── Client Info toggle (non-Lead stages sidebar) ──
-const clientInfoToggle = document.getElementById('client-info-toggle');
-const clientInfoBody = document.getElementById('client-info-body');
-if (clientInfoToggle && clientInfoBody) {
-  clientInfoToggle.addEventListener('click', () => {
-    const isOpen = clientInfoToggle.getAttribute('aria-expanded') === 'true';
-    clientInfoToggle.setAttribute('aria-expanded', String(!isOpen));
-    clientInfoBody.hidden = isOpen;
-  });
-}
-
 // ── Intake edit form ──
 const intakeEditBtn = document.getElementById('intake-edit-btn');
 const intakeEditForm = document.getElementById('intake-edit-form');
@@ -3514,6 +3408,7 @@ if (intakeEditBtn && intakeEditForm && intakeBody) {
 
   intakeSaveBtn?.addEventListener('click', async () => {
     const patch = {
+      email:           document.getElementById('ie-email')?.value ?? '',
       storeUrl:        document.getElementById('ie-store-url')?.value ?? '',
       storeStatus:     document.getElementById('ie-store-status')?.value ?? '',
       serviceInterest: document.getElementById('ie-service')?.value ?? '',
@@ -3546,18 +3441,18 @@ if (guideToggle && guideBody) {
   });
 }
 
-// ── Phase Stepper toggle ──
-const stepperDoneBtns = document.querySelectorAll('.stepper-step--done');
-const stepperPastPanels = document.querySelectorAll('.stepper-panel--past');
+// ── Stage tab toggle (view past phase notes) ──
+const stagePastTabs = document.querySelectorAll('.stage-tab--past');
+const stagePastPanels = document.querySelectorAll('.stepper-panel--past');
 
-stepperDoneBtns.forEach(btn => {
+stagePastTabs.forEach(btn => {
   btn.addEventListener('click', () => {
     const idx = btn.dataset.stepperIdx;
     const isExpanded = btn.getAttribute('aria-expanded') === 'true';
 
-    // Collapse all past panels and reset buttons
-    stepperDoneBtns.forEach(b => b.setAttribute('aria-expanded', 'false'));
-    stepperPastPanels.forEach(p => { p.hidden = true; });
+    // Collapse all past panels and reset tab states
+    stagePastTabs.forEach(b => b.setAttribute('aria-expanded', 'false'));
+    stagePastPanels.forEach(p => { p.hidden = true; });
 
     // If it wasn't open, open it
     if (!isExpanded) {
