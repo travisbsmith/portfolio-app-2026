@@ -34,14 +34,18 @@ export const POST: APIRoute = async ({ params, cookies, request }) => {
     createdAt: new Date().toISOString(),
   };
 
-  await updateLead(params.leadId!, {
-    activityLog: [entry, ...(lead.activityLog ?? [])],
-  });
+  try {
+    await updateLead(params.leadId!, {
+      activityLog: [entry, ...(lead.activityLog ?? [])],
+    });
 
-  return new Response(JSON.stringify(entry), {
-    status: 200,
-    headers: { 'Content-Type': 'application/json' },
-  });
+    return new Response(JSON.stringify(entry), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  } catch (e: any) {
+    return new Response(e.message || 'Upstream Error', { status: 500 });
+  }
 };
 
 export const DELETE: APIRoute = async ({ params, cookies, request }) => {
