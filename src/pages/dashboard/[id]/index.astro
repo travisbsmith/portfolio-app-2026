@@ -1131,6 +1131,23 @@ const lastActivityDaysAgo = lastActivity
   </div>
   </div>
 </div>
+  <div id="page-data"
+    data-lead-id={lead.id}
+    data-lead-email={lead.email}
+    data-lead-name={lead.name}
+    data-service-interest={lead.serviceInterest ?? ''}
+    data-invoice-url={latestOpenInvoice?.hosted_invoice_url ?? ''}
+    data-contract-hours={contractHours ?? ''}
+    data-month-prefix={thisMonthPrefix}
+    data-total-hours={totalHours}
+    data-activity-log={JSON.stringify(lead.activityLog ?? [])}
+    data-deliverables={JSON.stringify(lead.deliverables ?? [])}
+    data-todos={JSON.stringify(lead.todos ?? [])}
+    data-is-active={isActive ? 'true' : 'false'}
+    data-show-countdown={showLiveCountdown ? 'true' : 'false'}
+    data-meeting-iso={lead.nextMeetingISO ?? ''}
+    style="display:none"
+  ></div>
 </BaseLayout>
 
 <style>
@@ -3075,26 +3092,8 @@ const lastActivityDaysAgo = lastActivity
   }
 </style>
 
+
 <script is:inline src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js"></script>
-
-<div id="page-data"
-  data-lead-id={lead.id}
-  data-lead-email={lead.email}
-  data-lead-name={lead.name}
-  data-service-interest={lead.serviceInterest ?? ''}
-  data-invoice-url={latestOpenInvoice?.hosted_invoice_url ?? ''}
-  data-contract-hours={contractHours ?? ''}
-  data-month-prefix={thisMonthPrefix}
-  data-total-hours={totalHours}
-  data-activity-log={JSON.stringify(lead.activityLog ?? [])}
-  data-deliverables={JSON.stringify(lead.deliverables ?? [])}
-  data-todos={JSON.stringify(lead.todos ?? [])}
-  data-is-active={isActive ? 'true' : 'false'}
-  data-show-countdown={showLiveCountdown ? 'true' : 'false'}
-  data-meeting-iso={lead.nextMeetingISO ?? ''}
-  style="display:none"
-></div>
-
 <script is:inline>
 (function() {
   const pd = document.getElementById('page-data');
