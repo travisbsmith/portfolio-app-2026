@@ -24,7 +24,17 @@ if (isAuthenticated) {
   }
 }
 
-const activeLeads = leads.filter(l => l.stage !== 'Archived');
+const stageOrder: Record<string, number> = {
+  'Active': 1,
+  'Proposal Sent': 2,
+  'Call Scheduled': 3,
+  'Lead': 4,
+  'Closed': 5
+};
+
+const activeLeads = leads
+  .filter(l => l.stage !== 'Archived')
+  .sort((a, b) => (stageOrder[a.stage] ?? 99) - (stageOrder[b.stage] ?? 99));
 const archivedLeads = leads.filter(l => l.stage === 'Archived');
 
 // Next upcoming meeting across all active leads
