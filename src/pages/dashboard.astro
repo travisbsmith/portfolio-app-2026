@@ -8,6 +8,7 @@ import { getLeads, type Lead } from '../lib/leads';
 import { SESSION_COOKIE, SESSION_VALUE } from '../lib/auth';
 import { matchService } from '../lib/services';
 import { getTimeEntries } from '../lib/time';
+import CommandCenter from '../components/CommandCenter.astro';
 const DASHBOARD_PASSWORD = import.meta.env.DASHBOARD_PASSWORD ?? process.env.DASHBOARD_PASSWORD;
 
 let isAuthenticated = false;
@@ -164,6 +165,15 @@ if (isAuthenticated) {
       : 0;
   });
 }
+
+// ── Command Center Aggregation ──
+const globalTodos = activeLeads.flatMap(l => 
+  (l.todos ?? []).filter(t => !t.done).map(t => ({ ...t, leadName: l.name, leadId: l.id }))
+).sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
+const globalActivity = activeLeads.flatMap(l =>
+  (l.activityLog ?? []).map(a => ({ ...a, leadName: l.name, leadId: l.id }))
+).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 15);
 ---
 
 <BaseLayout title="Dashboard — Travis Smith" description="Private dashboard">
@@ -267,6 +277,8 @@ if (isAuthenticated) {
               </div>
             </div>
           </div>
+
+          <CommandCenter todos={globalTodos} activities={globalActivity} />
 
           <div class="section-header">
             <h2>Clients</h2>

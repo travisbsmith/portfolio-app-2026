@@ -1,0 +1,249 @@
+---
+import type { ActivityEntry, TodoItem } from '../lib/leads';
+import { marked } from 'marked';
+
+interface GlobalTodo extends TodoItem {
+  leadName: string;
+  leadId: string;
+}
+
+interface GlobalActivity extends ActivityEntry {
+  leadName: string;
+  leadId: string;
+}
+
+export interface Props {
+  todos: GlobalTodo[];
+  activities: GlobalActivity[];
+}
+
+const { todos, activities } = Astro.props;
+---
+
+<div class="command-center">
+  <div class="cc-header">
+    <h2>Command Center</h2>
+  </div>
+  
+  <div class="cc-grid">
+    <!-- Tasks Column -->
+    <div class="cc-col cc-tasks">
+      <div class="cc-col-header">
+        <h3>Open Tasks</h3>
+        <span class="cc-badge">{todos.length}</span>
+      </div>
+      <div class="cc-list">
+        {todos.length === 0 ? (
+          <p class="empty">All caught up!</p>
+        ) : (
+          todos.map(todo => (
+            <div class="cc-item">
+              <a href={`/dashboard/${todo.leadId}#todo-list`} class="cc-item-link">
+                <span class="cc-lead-name">{todo.leadName}</span>
+                <span class="cc-text">{todo.text}</span>
+              </a>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+
+    <!-- Feed Column -->
+    <div class="cc-col cc-feed">
+      <div class="cc-col-header">
+        <h3>Recent Activity</h3>
+      </div>
+      <div class="cc-list">
+        {activities.length === 0 ? (
+          <p class="empty">No recent activity.</p>
+        ) : (
+          activities.map(activity => {
+            const isEmail = activity.type === 'Email';
+            const isCall = activity.type === 'Call';
+            const dateStr = new Date(activity.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            return (
+              <div class={`cc-item cc-activity ${isEmail ? 'cc-activity--email' : isCall ? 'cc-activity--call' : ''}`}>
+                <div class="cc-activity-meta">
+                  <span class={`activity-badge activity-badge--${activity.type.toLowerCase()}`}>{activity.type}</span>
+                  <a href={`/dashboard/${activity.leadId}`} class="cc-lead-name cc-lead-name--link">{activity.leadName}</a>
+                  <span class="cc-date">{dateStr}</span>
+                </div>
+                <div class="cc-activity-body md-content" set:html={marked.parse(activity.text)} />
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+  .command-center {
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    margin-bottom: var(--space-8);
+    overflow: hidden;
+  }
+
+  .cc-header {
+    padding: var(--space-4) var(--space-5);
+    border-bottom: 1px solid var(--color-border);
+    background: var(--color-bg-alt);
+  }
+
+  .cc-header h2 {
+    margin: 0;
+    font-size: var(--text-base);
+    font-weight: 600;
+  }
+
+  .cc-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  @media (max-width: 768px) {
+    .cc-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .cc-col {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .cc-tasks {
+    border-right: 1px solid var(--color-border);
+  }
+
+  @media (max-width: 768px) {
+    .cc-tasks {
+      border-right: none;
+      border-bottom: 1px solid var(--color-border);
+    }
+  }
+
+  .cc-col-header {
+    padding: var(--space-3) var(--space-5);
+    border-bottom: 1px solid var(--color-border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .cc-col-header h3 {
+    margin: 0;
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-text-tertiary);
+  }
+
+  .cc-badge {
+    background: var(--color-bg-alt);
+    color: var(--color-text-secondary);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 999px;
+  }
+
+  .cc-list {
+    max-height: 400px;
+    overflow-y: auto;
+    padding: var(--space-2) 0;
+  }
+
+  .cc-item {
+    padding: var(--space-2) var(--space-5);
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .cc-item:last-child {
+    border-bottom: none;
+  }
+
+  .cc-item-link {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    text-decoration: none;
+    color: inherit;
+  }
+
+  .cc-item-link:hover .cc-text {
+    color: var(--color-text);
+  }
+
+  .cc-lead-name {
+    font-size: var(--text-xs);
+    font-weight: 600;
+    color: var(--color-accent);
+  }
+
+  .cc-lead-name--link {
+    text-decoration: none;
+  }
+  
+  .cc-lead-name--link:hover {
+    text-decoration: underline;
+  }
+
+  .cc-text {
+    font-size: var(--text-sm);
+    color: var(--color-text-secondary);
+    line-height: 1.4;
+  }
+
+  .cc-activity {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-3) var(--space-5);
+  }
+
+  .cc-activity-meta {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  .cc-date {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--color-text-tertiary);
+    margin-left: auto;
+  }
+
+  .cc-activity-body {
+    font-size: var(--text-sm);
+    color: var(--color-text-secondary);
+    line-height: 1.5;
+  }
+
+  .activity-badge {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 1px 5px;
+    border-radius: var(--radius-sm);
+    font-weight: 700;
+  }
+
+  .activity-badge--note  { background: var(--color-bg-alt); color: var(--color-text-secondary); border: 1px solid var(--color-border); }
+  .activity-badge--call  { background: #1a3a2a; color: #68d391; border: 1px solid #2d6a4a; }
+  .activity-badge--email { background: #1a2a3a; color: #63b3ed; border: 1px solid #2d4a6a; }
+
+  .empty {
+    padding: var(--space-4) var(--space-5);
+    color: var(--color-text-tertiary);
+    font-style: italic;
+    font-size: var(--text-sm);
+    margin: 0;
+  }
+</style>

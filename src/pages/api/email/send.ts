@@ -5,6 +5,8 @@ export const prerender = false;
 
 // Exported helper so webhook.ts and followup/check.ts can call it directly
 const TRAVIS = 'travis@fully-operational.com';
+const REPLY_TO_DOMAIN = import.meta.env.INBOUND_EMAIL_DOMAIN ?? process.env.INBOUND_EMAIL_DOMAIN ?? 'reply.fully-operational.com';
+const DEFAULT_REPLY_TO = `travis@${REPLY_TO_DOMAIN}`;
 
 function parseRecipients(value?: string | string[]): string[] {
   if (!value) return [];
@@ -27,7 +29,7 @@ export async function sendEmail({
   to,
   subject,
   html,
-  replyTo = TRAVIS,
+  replyTo = DEFAULT_REPLY_TO,
   cc,
 }: {
   to: string | string[];
