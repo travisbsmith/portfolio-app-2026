@@ -489,7 +489,7 @@ const lastActivityDaysAgo = lastActivity
             <div class="intake-edit-row">
               <label class="intake-edit-label" for="ie-service">Interested In</label>
               <select class="intake-edit-input" id="ie-service">
-                {['Clarity Session ($500)', 'Insider Retainer ($3,500/mo)', 'Store Launch Sprint ($2,500)', 'Not sure yet'].map(s => (
+                {['Clarity Session ($500)', 'Insider Retainer ($3,500/mo)', 'Store Launch Sprint ($2,500)', 'Free Month (10-15 hrs)', 'Not sure yet'].map(s => (
                   <option value={s} selected={s === lead.serviceInterest || lead.serviceInterest?.startsWith(s.split(' (')[0])}>{s}</option>
                 ))}
               </select>
@@ -599,6 +599,7 @@ const lastActivityDaysAgo = lastActivity
         <!-- Tab bar -->
         <div class="work-tabs">
           <button class="work-tab work-tab--active" data-tab="note" id="work-tab-note">Note</button>
+          <button class="work-tab" data-tab="email" id="work-tab-email">Email</button>
           {isActive && (
             <button class="work-tab" data-tab="time" id="work-tab-time">
               Time{monthlyHours > 0 ? ` · ${monthlyHours.toFixed(1)}h` : ''}
@@ -635,6 +636,30 @@ const lastActivityDaysAgo = lastActivity
             <div class="work-panel-footer">
               <span id="activity-status" class="save-status work-status" style="margin-right: var(--space-4);"></span>
               <button type="submit" class="btn-save" style="margin-left: auto;">Save</button>
+            </div>
+          </form>
+        </div>
+
+        <!-- Email panel -->
+        <div class="work-panel" id="work-panel-email" hidden>
+          <form id="email-reply-form" class="activity-form-container">
+            <input type="text" id="email-reply-subject" class="intake-edit-input" placeholder="Subject line..." required style="margin-bottom: var(--space-2); font-weight: 500; width: 100%; border: 1px solid var(--color-border); padding: 8px 12px; border-radius: var(--radius-sm);" />
+            <div class="md-editor email-editor">
+              <div class="md-toolbar md-toolbar--compact" id="email-toolbar">
+                <span style="font-size: var(--text-xs); color: var(--color-text-tertiary); font-family: var(--font-mono); font-weight: 500; text-transform: uppercase;">Body</span>
+                <span class="md-toolbar__sep"></span>
+                <button type="button" class="md-btn md-btn--bold" data-action="bold" title="Bold" tabindex="-1">B</button>
+                <button type="button" class="md-btn md-btn--italic" data-action="italic" title="Italic" tabindex="-1">I</button>
+                <button type="button" class="md-btn" data-action="link" title="Link" tabindex="-1">⌘K</button>
+                <span class="md-toolbar__sep"></span>
+                <button type="button" class="md-btn md-btn--mono" data-action="code" title="Code" tabindex="-1">`</button>
+                <button type="button" class="md-btn" data-action="list" title="List" tabindex="-1">—</button>
+              </div>
+              <textarea id="email-reply-text" rows="5" placeholder="Write your email here..." class="work-textarea md-textarea" required style="border-top-left-radius: 0; border-top-right-radius: 0; border-top: 0; width: 100%;"></textarea>
+            </div>
+            <div class="work-panel-footer">
+              <span id="email-reply-status" class="save-status work-status" style="margin-right: var(--space-4);"></span>
+              <button type="submit" class="btn-save btn-primary" id="email-reply-send-btn" style="margin-left: auto;">Send Email</button>
             </div>
           </form>
         </div>
@@ -3244,7 +3269,7 @@ setupToolbar(
 const workTabs = document.querySelectorAll('.work-tab');
 function switchWorkTab(targetTab) {
   workTabs.forEach(btn => btn.classList.toggle('work-tab--active', btn.dataset.tab === targetTab));
-  ['note', 'time', 'deliverable'].forEach(tab => {
+  ['note', 'email', 'time', 'deliverable'].forEach(tab => {
     const panel = document.getElementById('work-panel-' + tab);
     if (panel) panel.hidden = tab !== targetTab;
   });
@@ -3779,6 +3804,72 @@ activityForm && activityForm.addEventListener('submit', async (e) => {
     if (activityStatus) { activityStatus.textContent = 'Network error'; activityStatus.className = 'save-status error'; }
   } finally {
     if (activitySubmitBtn) activitySubmitBtn.disabled = false;
+  }
+});
+
+// Set up email toolbar
+setupToolbar(
+  document.getElementById('email-toolbar'),
+  document.getElementById('email-reply-text')
+);
+
+const emailFormEl = document.getElementById('email-reply-form');
+const emailSubmitBtn = document.getElementById('email-reply-send-btn');
+const emailStatus = document.getElementById('email-reply-status');
+
+emailFormEl && emailFormEl.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const subjectEl = document.getElementById('email-reply-subject');
+  const textEl = document.getElementById('email-reply-text');
+  
+  const subject = subjectEl.value.trim();
+  const text = textEl.value.trim();
+  if (!subject || !text) return;
+
+  if (emailSubmitBtn) { emailSubmitBtn.disabled = true; emailSubmitBtn.textContent = 'Sending...'; }
+  if (emailStatus) { emailStatus.textContent = 'Sending...'; emailStatus.className = 'save-status saving'; }
+
+  const htmlBody = typeof marked !== 'undefined' ? marked.parse(text) : text.replace(/\n/g, '<br>');
+
+  try {
+    const sendRes = await fetch('/api/email/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        to: leadEmail, 
+        subject: subject, 
+        html: htmlBody,
+        replyTo: `reply@reply.fully-operational.com`
+      })
+    });
+
+    if (!sendRes.ok) {
+      const msg = await sendRes.text().catch(() => 'Error');
+      throw new Error('API Error: ' + msg);
+    }
+
+    const logRes = await fetch('/api/activity/' + leadId, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'Email', text: `**Sent Email:** ${subject}\n\n${text}` }),
+    });
+
+    if (logRes.ok) {
+      const entry = await logRes.json();
+      activityLog.unshift(entry);
+      prependToFeed(renderActivityEntry(entry));
+    }
+
+    if (emailStatus) { emailStatus.textContent = 'Sent ✓'; emailStatus.className = 'save-status saved'; setTimeout(() => { emailStatus.textContent = ''; }, 3000); }
+    textEl.value = '';
+    subjectEl.value = '';
+    
+    // Switch back to Note tab after sending email
+    switchWorkTab('note');
+  } catch (err) {
+    if (emailStatus) { emailStatus.textContent = err.message || 'Error sending email'; emailStatus.className = 'save-status error'; }
+  } finally {
+    if (emailSubmitBtn) { emailSubmitBtn.disabled = false; emailSubmitBtn.textContent = 'Send Email'; }
   }
 });
 

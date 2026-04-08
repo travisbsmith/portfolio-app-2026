@@ -26,6 +26,13 @@ export const SERVICES: Record<string, ServiceConfig> = {
     invoiceAmountStr: '3500',
     contractHoursPerMonth: 12,
   },
+  'Free Month': {
+    label: 'Free Month',
+    priceCents: 0,
+    isRecurring: false,
+    invoiceAmountStr: '0',
+    contractHoursPerMonth: 15,
+  },
 };
 
 export function matchService(serviceInterest: string): ServiceConfig | null {
