@@ -5,6 +5,7 @@ export interface ActivityEntry {
   type: 'Note' | 'Call' | 'Email';
   text: string;
   createdAt: string;
+  phase?: string; // LeadStage value at time of creation
 }
 
 export interface Deliverable {

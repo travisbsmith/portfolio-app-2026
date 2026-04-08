@@ -112,6 +112,23 @@ const lastActivity = lead.activityLog?.[0] ?? null;
 const lastActivityDaysAgo = lastActivity
   ? Math.floor((Date.now() - new Date(lastActivity.createdAt).getTime()) / 86400000)
   : null;
+
+// Phase stepper
+const STAGES = ['Lead', 'Call Scheduled', 'Proposal Sent', 'Active', 'Closed'];
+const STAGE_ABBR: Record<string, string> = {
+  'Lead': 'Lead',
+  'Call Scheduled': 'Call',
+  'Proposal Sent': 'Proposal',
+  'Active': 'Active',
+  'Closed': 'Closed',
+};
+const currentStageIdx = STAGES.indexOf(lead.stage === 'Archived' ? 'Closed' : lead.stage);
+const notesByPhase: Record<string, ActivityEntry[]> = Object.fromEntries(
+  STAGES.map(stage => [
+    stage,
+    (lead.activityLog ?? []).filter(e => e.phase === stage),
+  ])
+);
 ---
 
 <BaseLayout title={`${lead.name} — Dashboard`} description="Lead detail">
@@ -153,70 +170,123 @@ const lastActivityDaysAgo = lastActivity
   <div class="lead-body container">
     <div class="lead-main">
 
-      <!-- ── Phase Status Bar ── -->
-      <div class="phase-bar phase-bar--{lead.stage.toLowerCase().replace(/\s+/g,'-')}">
-        {lead.stage === 'Lead' && (
-          <>
-            <span class="phase-bar__label">New lead</span>
-            {lead.referral && <span class="phase-bar__detail">via {lead.referral}</span>}
-            <span class="phase-bar__dot">·</span>
-            <span class="phase-bar__detail">{daysSinceLead === 0 ? 'today' : `${daysSinceLead}d ago`}</span>
-            <span class="phase-bar__dot">·</span>
-            <span class="phase-bar__detail">{lead.serviceInterest ? lead.serviceInterest.replace(/\s*\(\$[\d,]+(?:\/\w+)?\)/g,'') : 'service unknown'}</span>
-            <a href={`/dashboard/${lead.id}/proposal`} class="phase-bar__cta">Send Proposal →</a>
-          </>
-        )}
-        {lead.stage === 'Call Scheduled' && (
-          <>
-            <span class="phase-bar__label">Call scheduled</span>
-            {lead.nextMeeting
-              ? <span class="phase-bar__meeting">{lead.nextMeeting}</span>
-              : <span class="phase-bar__detail phase-bar__detail--warn">No time set yet</span>
-            }
-          </>
-        )}
-        {lead.stage === 'Proposal Sent' && (
-          <>
-            <span class="phase-bar__label">Proposal sent</span>
-            <span class="phase-bar__detail">{daysSinceLead === 0 ? 'today' : `${daysSinceLead}d ago`}</span>
-            {latestInvoiceStatus && (
-              <>
-                <span class="phase-bar__dot">·</span>
-                <span class={`phase-bar__invoice-status phase-bar__invoice-status--${latestInvoiceStatus}`}>
-                  Invoice: {latestInvoiceStatus}{latestInvoiceAmount ? ` ${latestInvoiceAmount}` : ''}
-                </span>
-              </>
-            )}
-            {!latestInvoiceStatus && (
-              <>
-                <span class="phase-bar__dot">·</span>
-                <span class="phase-bar__detail phase-bar__detail--warn">No invoice yet</span>
-              </>
-            )}
-          </>
-        )}
-        {lead.stage === 'Active' && (
-          <>
-            <span class="phase-bar__label">Active</span>
-            <span class="phase-bar__dot">·</span>
-            <span class="phase-bar__detail">
-              {contractHours
-                ? `${monthlyHours.toFixed(1)} / ${contractHours}h this month`
-                : `${monthlyHours.toFixed(1)}h this month`}
-            </span>
-            {lead.contractSignedAt
-              ? <><span class="phase-bar__dot">·</span><span class="phase-bar__signed">✓ Contract signed</span></>
-              : <><span class="phase-bar__dot">·</span><span class="phase-bar__detail phase-bar__detail--warn">Contract not signed</span></>
-            }
-          </>
-        )}
-        {isClosed && (
-          <>
-            <span class="phase-bar__label">{lead.stage}</span>
-            <span class="phase-bar__dot">·</span>
-            <span class="phase-bar__detail">{totalHours.toFixed(1)}h total logged</span>
-          </>
-        )}
+      <!-- ── Phase Stepper ── -->
+      <div class="phase-stepper">
+        <nav class="stepper-nav" aria-label="Pipeline stages">
+          {STAGES.map((stage, i) => {
+            const isPast = i < currentStageIdx;
+            const isCurrent = i === currentStageIdx;
+            const isFuture = i > currentStageIdx;
+            return (
+              <div class="stepper-step-wrap">
+                {i > 0 && <div class={`stepper-connector${(isPast || isCurrent) ? ' stepper-connector--done' : ''}`} />}
+                <button
+                  class={`stepper-step${isPast ? ' stepper-step--done' : ''}${isCurrent ? ' stepper-step--active' : ''}${isFuture ? ' stepper-step--future' : ''}`}
+                  data-stepper-idx={String(i)}
+                  disabled={isFuture || isCurrent || undefined}
+                  aria-expanded={isPast ? 'false' : undefined}
+                >
+                  <span class="stepper-step__icon">{isPast ? '✓' : isCurrent ? '●' : '○'}</span>
+                  <span class="stepper-step__label">{STAGE_ABBR[stage]}</span>
+                </button>
+              </div>
+            );
+          })}
+        </nav>
+
+        {STAGES.map((stage, i) => {
+          const isPast = i < currentStageIdx;
+          const isCurrent = i === currentStageIdx;
+          if (i > currentStageIdx) return null;
+          const phaseNotes = notesByPhase[stage] ?? [];
+          return (
+            <div
+              class={`stepper-panel${isPast ? ' stepper-panel--past' : ''}${isCurrent ? ' stepper-panel--current' : ''}`}
+              data-stepper-panel={String(i)}
+              hidden={isPast || undefined}
+            >
+              {isPast && (
+                phaseNotes.length > 0
+                  ? <ul class="stepper-notes">
+                      {phaseNotes.map(note => (
+                        <li class="stepper-note">
+                          <span class={`stepper-note__type stepper-note__type--${note.type.toLowerCase()}`}>{note.type}</span>
+                          <span class="stepper-note__text">{note.text}</span>
+                          <time class="stepper-note__date">{new Date(note.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</time>
+                        </li>
+                      ))}
+                    </ul>
+                  : <p class="stepper-empty">No notes from the {stage} phase.</p>
+              )}
+              {isCurrent && (
+                <div class="stepper-status">
+                  {lead.stage === 'Lead' && (
+                    <>
+                      <span class="phase-bar__label">New lead</span>
+                      {lead.referral && <span class="phase-bar__detail">via {lead.referral}</span>}
+                      <span class="phase-bar__dot">·</span>
+                      <span class="phase-bar__detail">{daysSinceLead === 0 ? 'today' : `${daysSinceLead}d ago`}</span>
+                      <span class="phase-bar__dot">·</span>
+                      <span class="phase-bar__detail">{lead.serviceInterest ? lead.serviceInterest.replace(/\s*\(\$[\d,]+(?:\/\w+)?\)/g,'') : 'service unknown'}</span>
+                      <a href={`/dashboard/${lead.id}/proposal`} class="phase-bar__cta">Send Proposal →</a>
+                    </>
+                  )}
+                  {lead.stage === 'Call Scheduled' && (
+                    <>
+                      <span class="phase-bar__label">Call scheduled</span>
+                      {lead.nextMeeting
+                        ? <span class="phase-bar__meeting">{lead.nextMeeting}</span>
+                        : <span class="phase-bar__detail phase-bar__detail--warn">No time set yet</span>
+                      }
+                    </>
+                  )}
+                  {lead.stage === 'Proposal Sent' && (
+                    <>
+                      <span class="phase-bar__label">Proposal sent</span>
+                      <span class="phase-bar__detail">{daysSinceLead === 0 ? 'today' : `${daysSinceLead}d ago`}</span>
+                      {latestInvoiceStatus && (
+                        <>
+                          <span class="phase-bar__dot">·</span>
+                          <span class={`phase-bar__invoice-status phase-bar__invoice-status--${latestInvoiceStatus}`}>
+                            Invoice: {latestInvoiceStatus}{latestInvoiceAmount ? ` ${latestInvoiceAmount}` : ''}
+                          </span>
+                        </>
+                      )}
+                      {!latestInvoiceStatus && (
+                        <>
+                          <span class="phase-bar__dot">·</span>
+                          <span class="phase-bar__detail phase-bar__detail--warn">No invoice yet</span>
+                        </>
+                      )}
+                    </>
+                  )}
+                  {lead.stage === 'Active' && (
+                    <>
+                      <span class="phase-bar__label">Active</span>
+                      <span class="phase-bar__dot">·</span>
+                      <span class="phase-bar__detail">
+                        {contractHours
+                          ? `${monthlyHours.toFixed(1)} / ${contractHours}h this month`
+                          : `${monthlyHours.toFixed(1)}h this month`}
+                      </span>
+                      {lead.contractSignedAt
+                        ? <><span class="phase-bar__dot">·</span><span class="phase-bar__signed">✓ Contract signed</span></>
+                        : <><span class="phase-bar__dot">·</span><span class="phase-bar__detail phase-bar__detail--warn">Contract not signed</span></>
+                      }
+                    </>
+                  )}
+                  {isClosed && (
+                    <>
+                      <span class="phase-bar__label">{lead.stage}</span>
+                      <span class="phase-bar__dot">·</span>
+                      <span class="phase-bar__detail">{totalHours.toFixed(1)}h total logged</span>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       <!-- Next Action: always shown, stage-aware CTA -->
@@ -2451,6 +2521,183 @@ const lastActivityDaysAgo = lastActivity
 
   .phase-bar__cta:hover { opacity: 0.8; }
 
+  /* ── Phase Stepper ── */
+  .phase-stepper {
+    margin-bottom: var(--space-6);
+  }
+
+  .stepper-nav {
+    display: flex;
+    align-items: flex-start;
+    margin-bottom: var(--space-4);
+  }
+
+  .stepper-step-wrap {
+    display: flex;
+    align-items: center;
+    flex: 1;
+  }
+
+  .stepper-step-wrap:last-child {
+    flex: 0 0 auto;
+  }
+
+  .stepper-connector {
+    flex: 1;
+    height: 1px;
+    background: var(--color-border);
+    margin-bottom: 18px; /* align with circle centers */
+  }
+
+  .stepper-connector--done {
+    background: var(--color-accent);
+    opacity: 0.5;
+  }
+
+  .stepper-step {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-2);
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: default;
+    font-family: inherit;
+  }
+
+  .stepper-step--done {
+    cursor: pointer;
+  }
+
+  .stepper-step--done:hover .stepper-step__icon {
+    opacity: 0.75;
+  }
+
+  .stepper-step__icon {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-family: var(--font-mono);
+    font-weight: 700;
+    border: 1px solid var(--color-border);
+    background: var(--color-bg);
+    color: var(--color-text-tertiary);
+    transition: opacity 0.15s;
+    flex-shrink: 0;
+  }
+
+  .stepper-step--done .stepper-step__icon {
+    background: var(--color-accent);
+    border-color: var(--color-accent);
+    color: #fff;
+    opacity: 0.85;
+  }
+
+  .stepper-step--active .stepper-step__icon {
+    background: var(--color-text);
+    border-color: var(--color-text);
+    color: var(--color-bg);
+  }
+
+  .stepper-step__label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--color-text-tertiary);
+    white-space: nowrap;
+  }
+
+  .stepper-step--done .stepper-step__label {
+    color: var(--color-text-secondary);
+  }
+
+  .stepper-step--active .stepper-step__label {
+    color: var(--color-text);
+    font-weight: 700;
+  }
+
+  /* Panels */
+  .stepper-panel {
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    padding: var(--space-3) var(--space-5);
+    background: var(--color-bg);
+    font-size: var(--text-sm);
+  }
+
+  .stepper-panel--past {
+    background: var(--color-bg-alt);
+  }
+
+  /* Current status row — reuses existing phase-bar element styles */
+  .stepper-status {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    flex-wrap: wrap;
+  }
+
+  /* Notes list in past-phase panels */
+  .stepper-notes {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+
+  .stepper-note {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-3);
+  }
+
+  .stepper-note__type {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 1px var(--space-2);
+    border-radius: var(--radius-sm);
+    flex-shrink: 0;
+    background: var(--color-bg);
+    color: var(--color-text-tertiary);
+    border: 1px solid var(--color-border);
+    margin-top: 2px;
+  }
+
+  .stepper-note__type--note { color: var(--color-text-secondary); }
+  .stepper-note__type--call { color: #68d391; border-color: #2d6a4a; background: #1a3a2a; }
+  .stepper-note__type--email { color: #63b3ed; border-color: #2d4a6a; background: #1a2a3a; }
+
+  .stepper-note__text {
+    flex: 1;
+    color: var(--color-text-secondary);
+    line-height: 1.5;
+  }
+
+  .stepper-note__date {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--color-text-tertiary);
+    flex-shrink: 0;
+    margin-top: 3px;
+  }
+
+  .stepper-empty {
+    font-size: var(--text-sm);
+    color: var(--color-text-tertiary);
+    font-style: italic;
+    margin: 0;
+  }
+
   /* ── Wrap-up Stats ── */
   .wrap-stats {
     display: flex;
@@ -3350,6 +3597,30 @@ if (guideToggle && guideBody) {
     localStorage.setItem('guide-open-' + leadId, String(!isOpen));
   });
 }
+
+// ── Phase Stepper toggle ──
+const stepperDoneBtns = document.querySelectorAll('.stepper-step--done');
+const stepperPastPanels = document.querySelectorAll('.stepper-panel--past');
+
+stepperDoneBtns.forEach(btn => {
+  btn.addEventListener('click', () => {
+    const idx = btn.dataset.stepperIdx;
+    const isExpanded = btn.getAttribute('aria-expanded') === 'true';
+
+    // Collapse all past panels and reset buttons
+    stepperDoneBtns.forEach(b => b.setAttribute('aria-expanded', 'false'));
+    stepperPastPanels.forEach(p => { (p as HTMLElement).hidden = true; });
+
+    // If it wasn't open, open it
+    if (!isExpanded) {
+      const panel = document.querySelector(`.stepper-panel[data-stepper-panel="${idx}"]`) as HTMLElement | null;
+      if (panel) {
+        panel.hidden = false;
+        btn.setAttribute('aria-expanded', 'true');
+      }
+    }
+  });
+});
 
 // ── Stage auto-save ──
 const stageSelect = document.getElementById('stage-select');

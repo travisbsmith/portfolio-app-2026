@@ -11,7 +11,7 @@ function isAuthed(cookies: Parameters<APIRoute>[0]['cookies']): boolean {
 export const POST: APIRoute = async ({ params, cookies, request }) => {
   if (!isAuthed(cookies)) return new Response('Unauthorized', { status: 401 });
 
-  let body: { type: string; text: string };
+  let body: { type: string; text: string; phase?: string };
   try { body = await request.json(); } catch {
     return new Response('Bad request', { status: 400 });
   }
@@ -32,6 +32,7 @@ export const POST: APIRoute = async ({ params, cookies, request }) => {
     type: body.type as 'Note' | 'Call' | 'Email',
     text: body.text,
     createdAt: new Date().toISOString(),
+    ...(body.phase ? { phase: body.phase } : {}),
   };
 
   try {
