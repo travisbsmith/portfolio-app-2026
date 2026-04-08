@@ -183,14 +183,14 @@ const globalActivity = activeLeads.flatMap(l =>
           ) : (
             <section class="section">
               <div class="table-container">
-                <table class="clients-table">
+                <table class="clients-table" id="clients-table">
                   <thead>
                     <tr>
-                      <th>Person</th>
-                      <th>Interested in</th>
-                      <th>Stage</th>
-                      <th>Latest Invoice</th>
-                      <th>Amount</th>
+                      <th class="sort-th" data-sort="name">Person <span class="sort-arrow">↕</span></th>
+                      <th class="sort-th" data-sort="service">Interested in <span class="sort-arrow">↕</span></th>
+                      <th class="sort-th" data-sort="stage">Stage <span class="sort-arrow">↕</span></th>
+                      <th class="sort-th" data-sort="invoice">Invoice <span class="sort-arrow">↕</span></th>
+                      <th class="sort-th" data-sort="amount">Amount <span class="sort-arrow">↕</span></th>
                       <th></th>
                     </tr>
                   </thead>
@@ -202,7 +202,16 @@ const globalActivity = activeLeads.flatMap(l =>
                       const amount = latest ? `$${((latest.amount_due ?? 0) / 100).toFixed(2)}` : '—';
                       const invoiceUrl = latest?.hosted_invoice_url ?? null;
                       return (
-                        <tr data-lead-id={lead.id} data-href={`/dashboard/${lead.id}`} class="clickable-row">
+                        <tr
+                          data-lead-id={lead.id}
+                          data-href={`/dashboard/${lead.id}`}
+                          class="clickable-row"
+                          data-sort-name={lead.name.toLowerCase()}
+                          data-sort-service={(lead.serviceInterest ?? '').replace(/\s*\(\$[\d,]+(?:\/\w+)?\)/g, '').toLowerCase()}
+                          data-sort-stage={String(stageOrder[lead.stage] ?? 99)}
+                          data-sort-invoice={(stripeInvoicesByClient[lead.email]?.[0]?.status ?? 'zzz').toLowerCase()}
+                          data-sort-amount={String((stripeInvoicesByClient[lead.email]?.[0]?.amount_due ?? 0) / 100)}
+                        >
                           <td>
                             <a href={`/dashboard/${lead.id}`} class="client-name-link">
                               <div class="client-name">{lead.name}</div>
@@ -506,7 +515,7 @@ const globalActivity = activeLeads.flatMap(l =>
 
   /* ── Buttons ── */
   .btn-primary {
-    padding: var(--space-3) var(--space-5);
+    padding: var(--space-2) var(--space-4);
     background: var(--color-accent);
     color: white;
     border: none;
@@ -516,12 +525,13 @@ const globalActivity = activeLeads.flatMap(l =>
     font-weight: 500;
     cursor: pointer;
     transition: background var(--duration-fast) var(--ease);
+    line-height: 1.5;
   }
 
   .btn-primary:hover { background: var(--color-accent-hover); }
 
   .btn-secondary {
-    padding: var(--space-3) var(--space-4);
+    padding: var(--space-2) var(--space-4);
     background: var(--color-bg);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-md);
@@ -529,6 +539,7 @@ const globalActivity = activeLeads.flatMap(l =>
     font-size: var(--text-sm);
     cursor: pointer;
     transition: all var(--duration-fast) var(--ease);
+    line-height: 1.5;
   }
 
   .btn-secondary:hover {
@@ -538,7 +549,7 @@ const globalActivity = activeLeads.flatMap(l =>
 
   /* ── Dashboard main ── */
   .dashboard-main {
-    padding: var(--space-8) 0;
+    padding: var(--space-8) 0 var(--space-12);
   }
 
   /* ── Next Call card ── */
@@ -607,8 +618,8 @@ const globalActivity = activeLeads.flatMap(l =>
   .stat-card {
     background: var(--color-bg);
     border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
-    padding: var(--space-5) var(--space-6);
+    border-radius: var(--radius-lg);
+    padding: var(--space-5) var(--space-5);
   }
 
   .stat-label {
@@ -643,16 +654,24 @@ const globalActivity = activeLeads.flatMap(l =>
     justify-content: space-between;
     align-items: center;
     margin-bottom: var(--space-4);
+    padding-bottom: var(--space-3);
+    border-bottom: 1px solid var(--color-border);
   }
 
   .section-header h2 {
-    font-size: var(--text-xl);
+    font-size: var(--text-sm);
+    font-family: var(--font-mono);
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    font-weight: 500;
+    color: var(--color-text-tertiary);
     margin: 0;
   }
 
   .header-actions {
     display: flex;
     gap: var(--space-2);
+    align-items: center;
   }
 
   /* ── Empty state ── */
@@ -897,6 +916,31 @@ const globalActivity = activeLeads.flatMap(l =>
     color: var(--color-accent);
   }
 
+  /* ── Sortable columns ── */
+  .sort-th {
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+  }
+
+  .sort-th:hover {
+    color: var(--color-text);
+  }
+
+  .sort-arrow {
+    display: inline-block;
+    font-size: 10px;
+    color: var(--color-text-tertiary);
+    margin-left: 4px;
+    opacity: 0.4;
+    transition: opacity 0.15s;
+  }
+
+  .sort-th[aria-sort] .sort-arrow {
+    opacity: 1;
+    color: var(--color-accent);
+  }
+
   .mono {
     font-family: var(--font-mono);
     font-size: var(--text-sm);
@@ -907,9 +951,10 @@ const globalActivity = activeLeads.flatMap(l =>
   .section {
     background: var(--color-bg);
     padding: var(--space-6);
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-lg);
     border: 1px solid var(--color-border);
     margin-bottom: var(--space-6);
+    overflow: hidden;
   }
 
   .section h2 {
@@ -934,7 +979,7 @@ const globalActivity = activeLeads.flatMap(l =>
   }
 
   /* ── Tables ── */
-  .table-container { overflow-x: auto; }
+  .table-container { overflow-x: auto; margin: 0 calc(-1 * var(--space-6)); }
 
   table {
     width: 100%;
@@ -943,18 +988,22 @@ const globalActivity = activeLeads.flatMap(l =>
   }
 
   th, td {
-    padding: var(--space-4) var(--space-5);
+    padding: 10px var(--space-6);
     text-align: left;
     border-bottom: 1px solid var(--color-border);
+    vertical-align: middle;
   }
 
   th {
     font-family: var(--font-mono);
     font-size: var(--text-xs);
     text-transform: uppercase;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.07em;
     color: var(--color-text-tertiary);
     font-weight: 500;
+    background: var(--color-bg-alt);
+    border-bottom: 1px solid var(--color-border);
+    white-space: nowrap;
   }
 
   td { color: var(--color-text); }
@@ -1241,6 +1290,54 @@ const globalActivity = activeLeads.flatMap(l =>
 </style>
 
 <script>
+  // ── Column sort ──
+  const STAGE_ORDER: Record<string, number> = {
+    'Active': 1, 'Proposal Sent': 2, 'Call Scheduled': 3, 'Lead': 4, 'Closed': 5
+  };
+  let sortCol = 'stage';
+  let sortDir = 1; // 1 = asc, -1 = desc
+
+  function sortTable(col: string) {
+    if (sortCol === col) {
+      sortDir *= -1;
+    } else {
+      sortCol = col;
+      sortDir = 1;
+    }
+
+    const tbody = document.getElementById('active-leads-body')!;
+    const rows = Array.from(tbody.querySelectorAll<HTMLTableRowElement>('tr.clickable-row'));
+
+    rows.sort((a, b) => {
+      let av = a.dataset['sort' + col.charAt(0).toUpperCase() + col.slice(1)] ?? '';
+      let bv = b.dataset['sort' + col.charAt(0).toUpperCase() + col.slice(1)] ?? '';
+      // Numeric sort for amount and stage
+      if (col === 'amount' || col === 'stage') {
+        return (parseFloat(av) - parseFloat(bv)) * sortDir;
+      }
+      return av.localeCompare(bv) * sortDir;
+    });
+
+    rows.forEach(r => tbody.appendChild(r));
+
+    // Update header indicators
+    document.querySelectorAll<HTMLElement>('.sort-th').forEach(th => {
+      th.removeAttribute('aria-sort');
+      const arrow = th.querySelector('.sort-arrow')!;
+      arrow.textContent = '↕';
+    });
+    const activeTh = document.querySelector<HTMLElement>(`.sort-th[data-sort="${col}"]`)!;
+    activeTh.setAttribute('aria-sort', sortDir === 1 ? 'ascending' : 'descending');
+    activeTh.querySelector('.sort-arrow')!.textContent = sortDir === 1 ? '↑' : '↓';
+  }
+
+  document.querySelectorAll<HTMLElement>('.sort-th').forEach(th => {
+    th.addEventListener('click', () => sortTable(th.dataset.sort!));
+  });
+
+  // Apply default sort (stage) on load
+  sortTable('stage');
+
   // ── Archive toggle ──
   document.getElementById('archived-toggle')?.addEventListener('click', (e) => {
     const btn = e.currentTarget as HTMLButtonElement;

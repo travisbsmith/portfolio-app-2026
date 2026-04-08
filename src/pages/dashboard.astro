@@ -502,7 +502,7 @@ const globalActivity = activeLeads.flatMap(l =>
 
   /* ── Buttons ── */
   .btn-primary {
-    padding: var(--space-3) var(--space-5);
+    padding: var(--space-2) var(--space-4);
     background: var(--color-accent);
     color: white;
     border: none;
@@ -512,12 +512,13 @@ const globalActivity = activeLeads.flatMap(l =>
     font-weight: 500;
     cursor: pointer;
     transition: background var(--duration-fast) var(--ease);
+    line-height: 1.5;
   }
 
   .btn-primary:hover { background: var(--color-accent-hover); }
 
   .btn-secondary {
-    padding: var(--space-3) var(--space-4);
+    padding: var(--space-2) var(--space-4);
     background: var(--color-bg);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-md);
@@ -525,6 +526,7 @@ const globalActivity = activeLeads.flatMap(l =>
     font-size: var(--text-sm);
     cursor: pointer;
     transition: all var(--duration-fast) var(--ease);
+    line-height: 1.5;
   }
 
   .btn-secondary:hover {
@@ -534,7 +536,7 @@ const globalActivity = activeLeads.flatMap(l =>
 
   /* ── Dashboard main ── */
   .dashboard-main {
-    padding: var(--space-8) 0;
+    padding: var(--space-8) 0 var(--space-12);
   }
 
   /* ── Next Call card ── */
@@ -603,8 +605,8 @@ const globalActivity = activeLeads.flatMap(l =>
   .stat-card {
     background: var(--color-bg);
     border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
-    padding: var(--space-5) var(--space-6);
+    border-radius: var(--radius-lg);
+    padding: var(--space-5) var(--space-5);
   }
 
   .stat-label {
@@ -639,16 +641,24 @@ const globalActivity = activeLeads.flatMap(l =>
     justify-content: space-between;
     align-items: center;
     margin-bottom: var(--space-4);
+    padding-bottom: var(--space-3);
+    border-bottom: 1px solid var(--color-border);
   }
 
   .section-header h2 {
-    font-size: var(--text-xl);
+    font-size: var(--text-sm);
+    font-family: var(--font-mono);
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    font-weight: 500;
+    color: var(--color-text-tertiary);
     margin: 0;
   }
 
   .header-actions {
     display: flex;
     gap: var(--space-2);
+    align-items: center;
   }
 
   /* ── Empty state ── */
