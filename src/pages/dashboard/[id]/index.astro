@@ -3076,22 +3076,42 @@ const lastActivityDaysAgo = lastActivity
 </style>
 
 <script is:inline src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js"></script>
-<script define:vars={{
-  leadId: lead.id,
-  leadEmail: lead.email,
-  leadName: lead.name,
-  serviceInterest: lead.serviceInterest,
-  latestOpenInvoiceUrl: latestOpenInvoice?.hosted_invoice_url ?? '',
-  contractHoursPerMonth: contractHours,
-  thisMonthPrefix,
-  totalHoursAll: totalHours,
-  initialActivityLog: lead.activityLog ?? [],
-  initialDeliverables: lead.deliverables ?? [],
-  initialTodos: lead.todos ?? [],
-  isActive,
-  showLiveCountdown,
-  meetingIso: lead.nextMeetingISO ?? '',
-}}>
+
+<div id="page-data"
+  data-lead-id={lead.id}
+  data-lead-email={lead.email}
+  data-lead-name={lead.name}
+  data-service-interest={lead.serviceInterest ?? ''}
+  data-invoice-url={latestOpenInvoice?.hosted_invoice_url ?? ''}
+  data-contract-hours={contractHours ?? ''}
+  data-month-prefix={thisMonthPrefix}
+  data-total-hours={totalHours}
+  data-activity-log={JSON.stringify(lead.activityLog ?? [])}
+  data-deliverables={JSON.stringify(lead.deliverables ?? [])}
+  data-todos={JSON.stringify(lead.todos ?? [])}
+  data-is-active={isActive ? 'true' : 'false'}
+  data-show-countdown={showLiveCountdown ? 'true' : 'false'}
+  data-meeting-iso={lead.nextMeetingISO ?? ''}
+  style="display:none"
+></div>
+
+<script is:inline>
+(function() {
+  const pd = document.getElementById('page-data');
+  const leadId = pd.dataset.leadId;
+  const leadEmail = pd.dataset.leadEmail;
+  const leadName = pd.dataset.leadName;
+  const serviceInterest = pd.dataset.serviceInterest;
+  const latestOpenInvoiceUrl = pd.dataset.invoiceUrl;
+  const contractHoursPerMonth = pd.dataset.contractHours ? Number(pd.dataset.contractHours) : null;
+  const thisMonthPrefix = pd.dataset.monthPrefix;
+  const totalHoursAll = Number(pd.dataset.totalHours);
+  const initialActivityLog = JSON.parse(pd.dataset.activityLog);
+  const initialDeliverables = JSON.parse(pd.dataset.deliverables);
+  const initialTodos = JSON.parse(pd.dataset.todos);
+  const isActive = pd.dataset.isActive === 'true';
+  const showLiveCountdown = pd.dataset.showCountdown === 'true';
+  const meetingIso = pd.dataset.meetingIso;
 
 async function patchLead(patch, statusEl) {
   statusEl.textContent = 'Saving...';
@@ -4032,4 +4052,5 @@ if (btnNaLogtime) {
     await saveTodos();
   });
 }
+})(); // end IIFE
 </script>
