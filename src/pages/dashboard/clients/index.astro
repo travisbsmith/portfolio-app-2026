@@ -1,45 +1,18 @@
 ---
 export const prerender = false;
 
-import BaseLayout from '../layouts/BaseLayout.astro';
-import DashboardNav from '../components/DashboardNav.astro';
+import BaseLayout from '../../../layouts/BaseLayout.astro';
+import DashboardNav from '../../../components/DashboardNav.astro';
 import Stripe from 'stripe';
-import { getLeads, type Lead } from '../lib/leads';
-import { SESSION_COOKIE, SESSION_VALUE } from '../lib/auth';
-import { matchService } from '../lib/services';
-import { getTimeEntries } from '../lib/time';
-import CommandCenter from '../components/CommandCenter.astro';
-const DASHBOARD_PASSWORD = import.meta.env.DASHBOARD_PASSWORD ?? process.env.DASHBOARD_PASSWORD;
+import { getLeads, type Lead } from '../../../lib/leads';
+import { SESSION_COOKIE, SESSION_VALUE, isAuthenticated as checkAuth } from '../../../lib/auth';
+import { matchService } from '../../../lib/services';
+import { getTimeEntries } from '../../../lib/time';
 
-let isAuthenticated = false;
+if (!checkAuth(Astro.cookies)) return Astro.redirect('/dashboard');
+
+let isAuthenticated = true;
 let loginError = '';
-
-// Handle POST: login or logout
-if (Astro.request.method === 'POST') {
-  const formData = await Astro.request.formData();
-  const action = formData.get('_action');
-
-  if (action === 'logout') {
-    Astro.cookies.delete(SESSION_COOKIE, { path: '/' });
-    return Astro.redirect('/dashboard');
-  }
-
-  const password = formData.get('password');
-  if (password === DASHBOARD_PASSWORD) {
-    Astro.cookies.set(SESSION_COOKIE, SESSION_VALUE, {
-      httpOnly: true,
-      secure: true,
-      sameSite: 'lax',
-      maxAge: 60 * 60 * 24 * 30,
-      path: '/',
-    });
-    return Astro.redirect('/dashboard');
-  } else {
-    loginError = 'Incorrect password';
-  }
-}
-
-isAuthenticated = Astro.cookies.get(SESSION_COOKIE)?.value === SESSION_VALUE;
 
 // Leads from KV
 let leads: Lead[] = [];
@@ -178,121 +151,140 @@ const globalActivity = activeLeads.flatMap(l =>
 
 <BaseLayout title="Dashboard — Travis Smith" description="Private dashboard">
 
-  {!isAuthenticated ? (
-    <!-- Login Screen -->
-    <div class="auth-screen">
-      <div class="auth-card">
-        <h1>Dashboard</h1>
-        <p>Enter password to access</p>
-        <form method="POST">
-          <input type="hidden" name="_action" value="login" />
-          <input
-            type="password"
-            name="password"
-            placeholder="Password"
-            autocomplete="current-password"
-            autofocus
-          />
-          <button type="submit">Access Dashboard</button>
-        </form>
-        {loginError && <p class="error">{loginError}</p>}
-      </div>
-    </div>
-  ) : (
-    <!-- Authenticated Dashboard -->
     <div class="dashboard app-layout">
-      <DashboardNav active="overview" leads={activeLeads} />
+      <DashboardNav active="clients" leads={activeLeads} />
 
       <div class="app-main">
       <main class="dashboard-main">
         <div class="container">
 
-          {nextCall && (
-            <a href={`/dashboard/${nextCall.id}`} class="next-call-card">
-              <div class="next-call-label">Next call</div>
-              <div class="next-call-info">
-                <span class="next-call-name">{nextCall.name}</span>
-                <span class="next-call-dot">·</span>
-                <span class="next-call-time">{nextCall.nextMeeting}</span>
-              </div>
-            </a>
-          )}
-
-          <div class="stats-strip">
-            <div class="stat-card">
-              <div class="stat-label">Pipeline</div>
-              <div class="stat-value">{fmt$(pipelineValue)}</div>
-              <div class="stat-sub">{proposalLeads.length} open proposal{proposalLeads.length !== 1 ? 's' : ''}</div>
-            </div>
-            <div class="stat-card">
-              <div class="stat-label">This Month</div>
-              <div class="stat-value">{fmt$(revenueThisMonth)}</div>
-              <div class="stat-sub">paid invoices</div>
-            </div>
-            <div class="stat-card">
-              <div class="stat-label">Active MRR</div>
-              <div class="stat-value">{fmt$(activeMRR)}</div>
-              <div class="stat-sub">{clientsActive.length} active client{clientsActive.length !== 1 ? 's' : ''}</div>
-            </div>
-            <div class="stat-card">
-              <div class="stat-label">YTD Revenue</div>
-              <div class="stat-value">{fmt$(revenueYTD)}</div>
-              <div class="stat-sub">{new Date().getFullYear()} total</div>
-            </div>
-            <div class={`stat-card${overdueCount > 0 ? ' stat-card--alert' : ''}`}>
-              <div class="stat-label">Overdue</div>
-              <div class={`stat-value${overdueCount > 0 ? ' stat-value--alert' : ''}`}>{overdueCount > 0 ? fmt$(overdueAmount) : '—'}</div>
-              <div class="stat-sub">{overdueCount > 0 ? `${overdueCount} invoice${overdueCount !== 1 ? 's' : ''}` : 'all clear'}</div>
-            </div>
-          </div>
-
-          <!-- Pipeline Analytics -->
-          <div class="pipeline-section">
-            <div class="pipeline-funnel">
-              {(['Lead', 'Call Scheduled', 'Proposal Sent', 'Active', 'Closed'] as const).map((stage, i, arr) => (
-                <>
-                  <div class="funnel-stage">
-                    <div class="funnel-count">{stageCounts[stage]}</div>
-                    <div class="funnel-label">{stage}</div>
-                  </div>
-                  {i < arr.length - 1 && <div class="funnel-arrow">›</div>}
-                </>
-              ))}
-            </div>
-            <div class="pipeline-metrics">
-              <div class="pipeline-metric">
-                <div class="pipeline-metric__value">{winRate}%</div>
-                <div class="pipeline-metric__label">Win Rate</div>
-                <div class="pipeline-metric__sub">proposals → active/closed</div>
-              </div>
-              <div class="pipeline-metric">
-                <div class="pipeline-metric__value">{fmt$(avgDealSize)}</div>
-                <div class="pipeline-metric__label">Avg Deal</div>
-                <div class="pipeline-metric__sub">{wonLeads.length} won deal{wonLeads.length !== 1 ? 's' : ''}</div>
-              </div>
-              <div class="pipeline-metric">
-                <div class="pipeline-metric__value">{allLeads.length}</div>
-                <div class="pipeline-metric__label">Total Leads</div>
-                <div class="pipeline-metric__sub">all time</div>
-              </div>
-            </div>
-          </div>
-
-          <CommandCenter todos={globalTodos} activities={globalActivity} />
-
           <div class="section-header">
-            <h2>Quick Actions</h2>
+            <h2>Clients</h2>
             <div class="header-actions">
               <button class="btn-secondary" id="new-lead-btn">+ New Lead</button>
               <button class="btn-primary" id="new-invoice-btn">+ New Invoice</button>
             </div>
           </div>
 
+          {activeLeads.length === 0 && archivedLeads.length === 0 ? (
+            <section class="section empty-state">
+              <p>No leads yet. When someone fills out <strong>/book</strong>, they'll appear here automatically.</p>
+            </section>
+          ) : (
+            <section class="section">
+              <div class="table-container">
+                <table class="clients-table">
+                  <thead>
+                    <tr>
+                      <th>Person</th>
+                      <th>Interested in</th>
+                      <th>Stage</th>
+                      <th>Latest Invoice</th>
+                      <th>Amount</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody id="active-leads-body">
+                    {activeLeads.map((lead) => {
+                      const invoices = stripeInvoicesByClient[lead.email] ?? [];
+                      const latest = invoices[0];
+                      const statusLabel = latest?.status ?? '—';
+                      const amount = latest ? `$${((latest.amount_due ?? 0) / 100).toFixed(2)}` : '—';
+                      const invoiceUrl = latest?.hosted_invoice_url ?? null;
+                      return (
+                        <tr data-lead-id={lead.id} data-href={`/dashboard/${lead.id}`} class="clickable-row">
+                          <td>
+                            <a href={`/dashboard/${lead.id}`} class="client-name-link">
+                              <div class="client-name">{lead.name}</div>
+                              <div class="client-email">{lead.email}</div>
+                              {lead.storeUrl && <div class="client-store">{lead.storeUrl.replace(/^https?:\/\//, '')}</div>}
+                              {lead.nextMeeting && <div class="client-meeting">📅 {lead.nextMeeting}</div>}
+                              {(timeTotalByLeadId[lead.id] ?? 0) > 0 && (
+                                <div class="client-time">{timeTotalByLeadId[lead.id].toFixed(1)} hrs logged</div>
+                              )}
+                            </a>
+                          </td>
+                          <td>
+                            <div class="service-interest">
+                              {lead.serviceInterest ? lead.serviceInterest.replace(/\s*\(\$[\d,]+(?:\/\w+)?\)/g, '') : '—'}
+                              {lead.storeStatus && <span class="store-status-sep"> · {lead.storeStatus}</span>}
+                            </div>
+                          </td>
+                          <td>
+                            <span class={`stage-badge stage-${lead.stage.toLowerCase().replace(/\s+/g, '-')}`}>
+                              {lead.stage}
+                            </span>
+                          </td>
+                          <td>
+                            {invoiceUrl ? (
+                              <a href={invoiceUrl} target="_blank" rel="noopener" class={`invoice-status status-${statusLabel}`}>
+                                {statusLabel}
+                              </a>
+                            ) : (
+                              <span class="invoice-status status-none">{statusLabel}</span>
+                            )}
+                          </td>
+                          <td class="mono">{amount}</td>
+                          <td class="td-actions">
+                            <div class="row-menu">
+                              <button class="row-menu-btn" aria-label="Actions" aria-expanded="false">⋮</button>
+                              <div class="row-menu-dropdown" hidden>
+                                <button class="row-menu-item followup-btn" data-email={lead.email} data-name={lead.name} data-invoice-url={invoiceUrl ?? ''}>Follow up</button>
+                                <button class="row-menu-item archive-btn" data-lead-id={lead.id}>Archive</button>
+                                <button class="row-menu-item row-menu-item--danger delete-btn" data-lead-id={lead.id} data-name={lead.name}>Delete</button>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  {archivedLeads.length > 0 && (
+                    <tbody id="archived-leads-body" class="archived-section" hidden>
+                      <tr class="archived-divider">
+                        <td colspan="6">Archived</td>
+                      </tr>
+                      {archivedLeads.map((lead) => (
+                        <tr data-lead-id={lead.id} class="archived-row">
+                          <td>
+                            <a href={`/dashboard/${lead.id}`} class="client-name-link">
+                              <div class="client-name">{lead.name}</div>
+                              <div class="client-email">{lead.email}</div>
+                            </a>
+                          </td>
+                          <td><div class="service-interest">{lead.serviceInterest ? lead.serviceInterest.replace(/\s*\(\$[\d,]+(?:\/\w+)?\)/g, '') : '—'}</div></td>
+                          <td><span class="stage-badge stage-archived">Archived</span></td>
+                          <td>—</td>
+                          <td>—</td>
+                          <td class="td-actions">
+                            <div class="row-menu">
+                              <button class="row-menu-btn" aria-label="Actions" aria-expanded="false">⋮</button>
+                              <div class="row-menu-dropdown" hidden>
+                                <button class="row-menu-item restore-btn" data-lead-id={lead.id}>Restore</button>
+                                <button class="row-menu-item row-menu-item--danger delete-btn" data-lead-id={lead.id} data-name={lead.name}>Delete</button>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  )}
+                </table>
+              </div>
+              {archivedLeads.length > 0 && (
+                <div class="archived-toggle-row">
+                  <button class="archived-toggle" id="archived-toggle">
+                    Show archived ({archivedLeads.length})
+                  </button>
+                </div>
+              )}
+            </section>
+          )}
+
         </div>
       </main>
       </div>
     </div>
-  )}
 
   <!-- ═══════════════════════════════════════════
        NEW INVOICE MODAL

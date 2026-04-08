@@ -2,7 +2,7 @@
 import type { Lead } from '../lib/leads';
 
 export interface Props {
-  active: 'clients' | 'analytics' | 'calendar';
+  active: 'overview' | 'clients' | 'analytics' | 'calendar';
   leads?: Lead[];
   currentLeadId?: string;
 }
@@ -12,11 +12,17 @@ const { active, leads = [], currentLeadId } = Astro.props;
 <aside class="sidebar">
   <nav class="sidebar-nav">
 
+    <div class="sidebar-section">
+      <div class="sidebar-row">
+        <a href="/dashboard" class:list={['sidebar-link', { 'sidebar-link--active': active === 'overview' }]}>Overview</a>
+      </div>
+    </div>
+
     <!-- Clients -->
     <div class="sidebar-section">
       <div class="sidebar-row">
         <a
-          href="/dashboard"
+          href="/dashboard/clients"
           class:list={['sidebar-link', { 'sidebar-link--active': active === 'clients' && !currentLeadId }]}
         >Clients</a>
         <button class="sidebar-expand-btn" id="sidebar-clients-toggle" aria-expanded="true" aria-label="Toggle client list" title="Toggle client list">▾</button>
@@ -35,6 +41,7 @@ const { active, leads = [], currentLeadId } = Astro.props;
       </div>
     </div>
 
+    <div class="sidebar-section">
       <div class="sidebar-row" style="margin-top: var(--space-2);">
         <a href="/analytics" class:list={['sidebar-link', { 'sidebar-link--active': active === 'analytics' }]}>Analytics</a>
       </div>
