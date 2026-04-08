@@ -9,8 +9,8 @@ export interface TimeEntry {
 
 import { createClient } from '@vercel/kv';
 
-const url = import.meta.env.KV_REST_API_URL ?? process.env?.KV_REST_API_URL;
-const token = import.meta.env.KV_REST_API_TOKEN ?? process.env?.KV_REST_API_TOKEN;
+const url = process.env.KV_REST_API_URL;
+const token = process.env.KV_REST_API_TOKEN;
 const kv = createClient({ url: url as string, token: token as string });
 
 export async function getTimeEntries(leadId: string): Promise<TimeEntry[]> {

@@ -633,7 +633,8 @@ const lastActivityDaysAgo = lastActivity
               <textarea id="activity-text" rows="4" placeholder="What happened, decisions made, notes from a call..." class="work-textarea md-textarea" style="border-top-left-radius: 0; border-top-right-radius: 0; border-top: 0;"></textarea>
             </div>
             <div class="work-panel-footer">
-              <button type="submit" class="btn-save">Save</button>
+              <span id="activity-status" class="save-status work-status" style="margin-right: var(--space-4);"></span>
+              <button type="submit" class="btn-save" style="margin-left: auto;">Save</button>
             </div>
           </form>
         </div>
@@ -3709,7 +3710,7 @@ activityForm && activityForm.addEventListener('submit', async (e) => {
     });
     if (!res.ok) {
       const msg = await res.text().catch(() => 'Error');
-      if (activityStatus) { activityStatus.textContent = 'Error: ' + msg; activityStatus.className = 'save-status error'; }
+      if (activityStatus) { activityStatus.textContent = 'API Error: ' + res.status + ' - ' + msg; activityStatus.className = 'save-status error'; }
       return;
     }
     const entry = await res.json();
