@@ -3609,11 +3609,11 @@ stepperDoneBtns.forEach(btn => {
 
     // Collapse all past panels and reset buttons
     stepperDoneBtns.forEach(b => b.setAttribute('aria-expanded', 'false'));
-    stepperPastPanels.forEach(p => { (p as HTMLElement).hidden = true; });
+    stepperPastPanels.forEach(p => { p.hidden = true; });
 
     // If it wasn't open, open it
     if (!isExpanded) {
-      const panel = document.querySelector(`.stepper-panel[data-stepper-panel="${idx}"]`) as HTMLElement | null;
+      const panel = document.querySelector(`.stepper-panel[data-stepper-panel="${idx}"]`);
       if (panel) {
         panel.hidden = false;
         btn.setAttribute('aria-expanded', 'true');
