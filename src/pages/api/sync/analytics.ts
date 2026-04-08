@@ -56,11 +56,12 @@ export const GET: APIRoute = async ({ request }) => {
   const toMetric = (items: any[]) =>
     (items || []).map((i: any) => ({ x: i.x || '(unknown)', y: i.y || 0 }));
 
-  const [pages, referrers, countries, devices] = await Promise.all([
+  const [pages, referrers, countries, devices, events] = await Promise.all([
     fetchJson(`/websites/${UMAMI_WEBSITE_ID}/metrics?startAt=${weekAgo}&endAt=${now}&type=url`, apiKey),
     fetchJson(`/websites/${UMAMI_WEBSITE_ID}/metrics?startAt=${weekAgo}&endAt=${now}&type=referrer`, apiKey),
     fetchJson(`/websites/${UMAMI_WEBSITE_ID}/metrics?startAt=${weekAgo}&endAt=${now}&type=country`, apiKey),
     fetchJson(`/websites/${UMAMI_WEBSITE_ID}/metrics?startAt=${weekAgo}&endAt=${now}&type=device`, apiKey),
+    fetchJson(`/websites/${UMAMI_WEBSITE_ID}/metrics?startAt=${weekAgo}&endAt=${now}&type=event`, apiKey),
   ]);
 
   const cache = {
@@ -70,6 +71,7 @@ export const GET: APIRoute = async ({ request }) => {
     referrers: toMetric(referrers).slice(0, 15),
     countries: toMetric(countries).slice(0, 10),
     devices: toMetric(devices).slice(0, 5),
+    events: toMetric(events).slice(0, 20),
   };
 
   const kv = createClient({ url: kvUrl, token: kvToken });

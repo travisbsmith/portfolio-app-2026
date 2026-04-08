@@ -45,11 +45,7 @@ const { active, leads = [], currentLeadId } = Astro.props;
       <div class="sidebar-row" style="margin-top: var(--space-2);">
         <a href="/analytics" class:list={['sidebar-link', { 'sidebar-link--active': active === 'analytics' }]}>Analytics</a>
       </div>
-      <div class="sidebar-row">
-        <a href="/calendar" class:list={['sidebar-link', { 'sidebar-link--active': active === 'calendar' }]}>Calendar</a>
-      </div>
     </div>
-
   </nav>
 
   <div class="sidebar-footer">
