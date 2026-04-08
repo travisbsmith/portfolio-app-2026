@@ -170,26 +170,22 @@ const notesByPhase: Record<string, ActivityEntry[]> = Object.fromEntries(
   <div class="lead-body container">
     <div class="lead-main">
 
-      <!-- ── Phase Stepper ── -->
-      <div class="phase-stepper">
-        <nav class="stepper-nav" aria-label="Pipeline stages">
+      <!-- ── Stage Tabs ── -->
+      <div class="stage-tabs">
+        <nav class="stage-tabs__nav" aria-label="Pipeline stages">
           {STAGES.map((stage, i) => {
             const isPast = i < currentStageIdx;
             const isCurrent = i === currentStageIdx;
             const isFuture = i > currentStageIdx;
             return (
-              <div class="stepper-step-wrap">
-                {i > 0 && <div class={`stepper-connector${(isPast || isCurrent) ? ' stepper-connector--done' : ''}`} />}
-                <button
-                  class={`stepper-step${isPast ? ' stepper-step--done' : ''}${isCurrent ? ' stepper-step--active' : ''}${isFuture ? ' stepper-step--future' : ''}`}
-                  data-stepper-idx={String(i)}
-                  disabled={isFuture || isCurrent || undefined}
-                  aria-expanded={isPast ? 'false' : undefined}
-                >
-                  <span class="stepper-step__icon">{isPast ? '✓' : isCurrent ? '●' : '○'}</span>
-                  <span class="stepper-step__label">{STAGE_ABBR[stage]}</span>
-                </button>
-              </div>
+              <button
+                class={`stage-tab${isPast ? ' stage-tab--past' : ''}${isCurrent ? ' stage-tab--active' : ''}${isFuture ? ' stage-tab--future' : ''}`}
+                data-stepper-idx={String(i)}
+                disabled={isFuture || isCurrent || undefined}
+                aria-expanded={isPast ? 'false' : undefined}
+              >
+                {STAGE_ABBR[stage]}
+              </button>
             );
           })}
         </nav>
@@ -2521,112 +2517,64 @@ const notesByPhase: Record<string, ActivityEntry[]> = Object.fromEntries(
 
   .phase-bar__cta:hover { opacity: 0.8; }
 
-  /* ── Phase Stepper ── */
-  .phase-stepper {
+  /* ── Stage Tabs ── */
+  .stage-tabs {
     margin-bottom: var(--space-6);
   }
 
-  .stepper-nav {
+  .stage-tabs__nav {
     display: flex;
-    align-items: flex-start;
-    margin-bottom: var(--space-4);
+    border-bottom: 1px solid var(--color-border);
+    margin-bottom: 0;
+    gap: 0;
   }
 
-  .stepper-step-wrap {
-    display: flex;
-    align-items: center;
-    flex: 1;
-  }
-
-  .stepper-step-wrap:last-child {
-    flex: 0 0 auto;
-  }
-
-  .stepper-connector {
-    flex: 1;
-    height: 1px;
-    background: var(--color-border);
-    margin-bottom: 18px; /* align with circle centers */
-  }
-
-  .stepper-connector--done {
-    background: var(--color-accent);
-    opacity: 0.5;
-  }
-
-  .stepper-step {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: var(--space-2);
+  .stage-tab {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
     background: none;
     border: none;
-    padding: 0;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    padding: var(--space-3) var(--space-4);
+    color: var(--color-text-tertiary);
     cursor: default;
-    font-family: inherit;
+    white-space: nowrap;
+    transition: color 0.15s, border-color 0.15s;
   }
 
-  .stepper-step--done {
+  .stage-tab--past {
+    color: var(--color-text-secondary);
     cursor: pointer;
   }
 
-  .stepper-step--done:hover .stepper-step__icon {
-    opacity: 0.75;
-  }
-
-  .stepper-step__icon {
-    width: 26px;
-    height: 26px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 11px;
-    font-family: var(--font-mono);
-    font-weight: 700;
-    border: 1px solid var(--color-border);
-    background: var(--color-bg);
-    color: var(--color-text-tertiary);
-    transition: opacity 0.15s;
-    flex-shrink: 0;
-  }
-
-  .stepper-step--done .stepper-step__icon {
-    background: var(--color-accent);
-    border-color: var(--color-accent);
-    color: #fff;
-    opacity: 0.85;
-  }
-
-  .stepper-step--active .stepper-step__icon {
-    background: var(--color-text);
-    border-color: var(--color-text);
-    color: var(--color-bg);
-  }
-
-  .stepper-step__label {
-    font-family: var(--font-mono);
-    font-size: 10px;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--color-text-tertiary);
-    white-space: nowrap;
-  }
-
-  .stepper-step--done .stepper-step__label {
-    color: var(--color-text-secondary);
-  }
-
-  .stepper-step--active .stepper-step__label {
+  .stage-tab--past:hover {
     color: var(--color-text);
+  }
+
+  .stage-tab--past[aria-expanded="true"] {
+    color: var(--color-text);
+    border-bottom-color: var(--color-border-strong);
+  }
+
+  .stage-tab--active {
+    color: var(--color-text);
+    border-bottom-color: var(--color-accent);
     font-weight: 700;
+  }
+
+  .stage-tab--future {
+    opacity: 0.35;
   }
 
   /* Panels */
   .stepper-panel {
     border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
-    padding: var(--space-3) var(--space-5);
+    border-top: none;
+    border-radius: 0 0 var(--radius-md) var(--radius-md);
+    padding: var(--space-4) var(--space-5);
     background: var(--color-bg);
     font-size: var(--text-sm);
   }
