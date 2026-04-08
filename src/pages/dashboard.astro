@@ -28,8 +28,8 @@ if (Astro.request.method === 'POST') {
     Astro.cookies.set(SESSION_COOKIE, SESSION_VALUE, {
       httpOnly: true,
       secure: true,
-      sameSite: 'strict',
-      maxAge: 60 * 60 * 24 * 7,
+      sameSite: 'lax',
+      maxAge: 60 * 60 * 24 * 30,
       path: '/',
     });
     return Astro.redirect('/dashboard');

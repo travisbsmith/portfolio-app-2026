@@ -17,6 +17,7 @@
     "stripe": "^21.0.1"
   },
   "devDependencies": {
+    "@types/node": "^25.5.2",
     "tsx": "^4.21.0"
   }
 }
