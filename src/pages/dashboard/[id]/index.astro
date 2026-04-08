@@ -3716,7 +3716,7 @@ activityForm && activityForm.addEventListener('submit', async (e) => {
     const entry = await res.json();
     activityLog.unshift(entry);
     if (activityStatus) { activityStatus.textContent = 'Saved ✓'; activityStatus.className = 'save-status saved'; setTimeout(() => { activityStatus.textContent = ''; }, 2000); }
-    prependToFeed(createActivityEntry(entry));
+    prependToFeed(renderActivityEntry(entry));
     if (textEl) textEl.value = '';
   } catch (err) {
     if (activityStatus) { activityStatus.textContent = 'Network error'; activityStatus.className = 'save-status error'; }
