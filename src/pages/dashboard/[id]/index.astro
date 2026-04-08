@@ -771,10 +771,16 @@ const lastActivityDaysAgo = lastActivity
         <section class="card">
           <div class="card__header"><h2>Next Meeting</h2></div>
           <div class="card__body">
-            <div class="form-row">
+            <div class="form-row" style="margin-bottom: 0;">
               <label>Date &amp; time</label>
-              <div class="stripe-id-row">
-                <input type="text" id="next-meeting-input" value={lead.nextMeeting ?? ''} placeholder="e.g. Apr 10, 12:30 CT" data-lead-id={lead.id} />
+              <input
+                type="datetime-local"
+                id="next-meeting-input"
+                value={lead.nextMeetingISO ? new Date(lead.nextMeetingISO).toISOString().slice(0, 16) : ''}
+                data-lead-id={lead.id}
+                style="width: 100%;"
+              />
+              <div style="display: flex; justify-content: flex-end; margin-top: var(--space-2);">
                 <button id="next-meeting-save" class="btn-save">Save</button>
               </div>
               <span id="next-meeting-status" class="save-status"></span>
@@ -3554,10 +3560,21 @@ followupFormEl && followupFormEl.addEventListener('submit', async (e) => {
 
 // ── Next Meeting / Stripe ID save ──
 const nextMeetingSave = document.getElementById('next-meeting-save');
-nextMeetingSave && nextMeetingSave.addEventListener('click', () =>
-  patchLead({ nextMeeting: document.getElementById('next-meeting-input').value },
-    document.getElementById('next-meeting-status'))
-);
+nextMeetingSave && nextMeetingSave.addEventListener('click', () => {
+  const input = /** @type {HTMLInputElement} */ (document.getElementById('next-meeting-input'));
+  const iso = input.value; // e.g. "2026-04-15T14:30"
+  if (!iso) {
+    patchLead({ nextMeeting: '', nextMeetingISO: '' }, document.getElementById('next-meeting-status'));
+    return;
+  }
+  const dt = new Date(iso);
+  // Format as human-readable string: "Apr 15, 2:30 PM"
+  const readable = dt.toLocaleString('en-US', {
+    month: 'short', day: 'numeric',
+    hour: 'numeric', minute: '2-digit', hour12: true
+  });
+  patchLead({ nextMeeting: readable, nextMeetingISO: dt.toISOString() }, document.getElementById('next-meeting-status'));
+});
 
 const stripeIdSave = document.getElementById('stripe-id-save');
 stripeIdSave && stripeIdSave.addEventListener('click', () =>
@@ -3743,8 +3760,16 @@ function renderActivityEntry(entry) {
 function checkFeedEmpty() {
   const feed = document.getElementById('work-feed');
   if (!feed) return;
-  if (feed.children.length === 0) {
-    feed.innerHTML = '<p class="empty" id="work-feed-empty">Nothing logged yet.</p>';
+  const hasEntries = feed.querySelectorAll('.feed-entry').length > 0;
+  const existingEmpty = document.getElementById('work-feed-empty');
+  if (!hasEntries && !existingEmpty) {
+    const p = document.createElement('p');
+    p.className = 'empty';
+    p.id = 'work-feed-empty';
+    p.textContent = 'Nothing logged yet.';
+    feed.appendChild(p);
+  } else if (hasEntries && existingEmpty) {
+    existingEmpty.remove();
   }
 }
 
